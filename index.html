@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>⚖️ Сборщик датасета судебных актов</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Custom CSS -->
+    <link href="css/styles.css" rel="stylesheet">
+    
+    <!-- PDF.js -->
+    <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.min.js"></script>
+    <script>
+        // Настройка worker для PDF.js
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 
+            'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.worker.min.js';
+    </script>
+</head>
+<body>
+    <!-- Навигация -->
+    <nav class="navbar navbar-dark bg-primary mb-4">
+        <div class="container">
+            <a class="navbar-brand" href="#">
+                ⚖️ Сборщик датасета судебных актов
+            </a>
+            <span class="navbar-text text-white" id="dataset-count">
+                Записей: 0
+            </span>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- Статистика -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card stats-card">
+                    <div class="card-body text-center">
+                        <h5 class="card-title text-primary" id="stat-records">0</h5>
+                        <p class="card-text text-muted">Записей в датасете</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stats-card">
+                    <div class="card-body text-center">
+                        <h5 class="card-title text-success" id="stat-processed">0</h5>
+                        <p class="card-text text-muted">Обработано файлов</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stats-card">
+                    <div class="card-body text-center">
+                        <h5 class="card-title text-info" id="stat-chars">0</h5>
+                        <p class="card-text text-muted">Символов текста</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stats-card">
+                    <div class="card-body text-center">
+                        <h5 class="card-title text-warning" id="stat-date-range">-</h5>
+                        <p class="card-text text-muted">Диапазон дат</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Загрузка существующего датасета -->
+        <div class="card mb-4">
+            <div class="card-header bg-light">
+                <h5 class="mb-0">📥 Загрузить существующий датасет (JSONL)</h5>
+            </div>
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col-md-8">
+                        <input type="file" id="jsonl-upload" class="form-control" accept=".jsonl,.json">
+                        <small class="text-muted">Загрузите ранее сохранённый JSONL для продолжения работы</small>
+                    </div>
+                    <div class="col-md-4">
+                        <button id="btn-load-jsonl" class="btn btn-outline-primary w-100">
+                            📂 Загрузить датасет
+                        </button>
+                    </div>
+                </div>
+                <div id="load-status" class="mt-2"></div>
+            </div>
+        </div>
+
+        <!-- Загрузка PDF файлов -->
+        <div class="card mb-4">
+            <div class="card-header bg-light">
+                <h5 class="mb-0">📤 Загрузить судебные акты (PDF)</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <input type="file" id="pdf-upload" class="form-control" 
+                           accept=".pdf" multiple>
+                    <small class="text-muted">
+                        Формат имени файла: <code>A60-36858-2025_20251003_Reshenija.pdf</code><br>
+                        Где <code>A60-36858-2025</code> — номер дела, <code>20251003</code> — дата решения
+                    </small>
+                </div>
+                <div class="progress mb-3" style="height: 20px;" id="process-progress-container">
+                    <div class="progress-bar" id="process-progress" role="progressbar" 
+                         style="width: 0%">0%</div>
+                </div>
+                <button id="btn-process" class="btn btn-primary" disabled>
+                    🔄 Обработать файлы
+                </button>
+                <div id="process-status" class="mt-2"></div>
+            </div>
+        </div>
+
+        <!-- Предпросмотр датасета -->
+        <div class="card mb-4" id="preview-section" style="display: none;">
+            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">👁 Предпросмотр датасета</h5>
+                <select id="preview-select" class="form-select form-select-sm" style="width: auto;">
+                    <option value="">Выберите запись...</option>
+                </select>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <h6>📋 Метаданные</h6>
+                        <div id="preview-metadata" class="small">
+                            <p class="text-muted">Выберите запись для просмотра</p>
+                        </div>
+                    </div>
+                    <div class="col-md-8">
+                        <h6>📄 Текст решения (фрагмент)</h6>
+                        <div id="preview-text" class="preview-box small">
+                            <p class="text-muted">Текст будет отображён здесь</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Таблица записей -->
+        <div class="card mb-4" id="table-section" style="display: none;">
+            <div class="card-header bg-light">
+                <h5 class="mb-0">📊 Все записи в датасете</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover" id="records-table">
+                        <thead>
+                            <tr>
+                                <th>№</th>
+                                <th>Номер дела</th>
+                                <th>Дата решения</th>
+                                <th>Длина текста</th>
+                                <th>Статус</th>
+                            </tr>
+                        </thead>
+                        <tbody id="records-body">
+                            <!-- Записи будут добавлены динамически -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Экспорт датасета -->
+        <div class="card mb-4" id="export-section" style="display: none;">
+            <div class="card-header bg-light">
+                <h5 class="mb-0">💾 Экспорт датасета</h5>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <button id="btn-download-jsonl" class="btn btn-outline-primary w-100">
+                            📥 Скачать JSONL
+                        </button>
+                    </div>
+                    <div class="col-md-4">
+                        <button id="btn-download-instruction" class="btn btn-outline-success w-100">
+                            📥 Скачать Instruction Dataset
+                        </button>
+                    </div>
+                    <div class="col-md-4">
+                        <button id="btn-download-zip" class="btn btn-outline-info w-100">
+                            📦 Скачать ZIP-архив
+                        </button>
+                    </div>
+                </div>
+                <small class="text-muted d-block mt-2">
+                    ℹ️ Все файлы скачиваются локально. Данные не отправляются на сервер.
+                </small>
+            </div>
+        </div>
+
+        <!-- Информация о форматах -->
+        <div class="accordion mb-4" id="formatInfo">
+            <div class="accordion-item">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" 
+                            data-bs-toggle="collapse" data-bs-target="#formatCollapse">
+                        ℹ️ Описание форматов экспорта
+                    </button>
+                </h2>
+                <div id="formatCollapse" class="accordion-collapse collapse" 
+                     data-bs-parent="#formatInfo">
+                    <div class="accordion-body small">
+                        <h6>📄 JSONL (Основной датасет)</h6>
+                        <ul>
+                            <li>Формат: JSON Lines (одна JSON-запись на строку)</li>
+                            <li>Поля: <code>case_number</code>, <code>decision_date</code>, 
+                                <code>decision_text</code>, <code>metadata</code></li>
+                            <li>Кодировка: UTF-8</li>
+                        </ul>
+                        <h6>📚 Instruction Dataset</h6>
+                        <ul>
+                            <li>Формат: JSON Lines с полями <code>instruction</code>, 
+                                <code>input</code>, <code>output</code></li>
+                            <li>Назначение: Fine-tuning LLM (LoRA, QLoRA)</li>
+                        </ul>
+                        <h6>📦 ZIP-архив</h6>
+                        <ul>
+                            <li>Включает: основной датасет, инструктивный датасет, 
+                                статистику CSV и README</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-light py-3 mt-5">
+        <div class="container text-center text-muted small">
+            <p class="mb-0">⚖️ Сборщик датасета судебных актов | Версия 1.0</p>
+            <p class="mb-0">Данные обрабатываются локально в браузере</p>
+        </div>
+    </footer>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- JSZip для создания ZIP-архивов -->
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+    <!-- FileSaver для сохранения файлов -->
+    <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+    <!-- Custom JS -->
+    <script src="js/jsonl-handler.js"></script>
+    <script src="js/pdf-processor.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
