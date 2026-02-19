@@ -3,31 +3,55 @@
  * Обработка PDF-файлов в браузере с использованием pdf.js
  */
 
+// Проверка загрузки PDF.js
+if (typeof pdfjsLib === 'undefined') {
+    console.error('❌ PDF.js не загружен! Проверьте подключение скриптов в index.html');
+    alert('Ошибка: PDF.js не загружен. Проверьте консоль браузера (F12).');
+}
+
 const PDFProcessor = {
     /**
      * Извлекает текст из PDF-файла
-     * @param {File} file - PDF файл
-     * @returns {Promise<string>} - Извлечённый текст
      */
     async extractText(file) {
-        const arrayBuffer = await file.arrayBuffer();
-        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        console.log('🔍 Начало извлечения текста из:', file.name);
         
-        let fullText = [];
-        
-        for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-            const page = await pdf.getPage(pageNum);
-            const textContent = await page.getTextContent();
+        try {
+            const arrayBuffer = await file.arrayBuffer();
+            console.log('📦 Размер файла:', arrayBuffer.byteLength, 'байт');
             
-            const pageText = textContent.items
-                .map(item => item.str)
-                .join(' ');
+            const loadingTask = pdfjsLib.getDocument({ arrayBuffer });
+            const pdf = await loadingTask.promise;
             
-            fullText.push(`--- СТРАНИЦА ${pageNum} ---\n${pageText}\n`);
+            console.log('✅ PDF загружен, страниц:', pdf.numPages);
+            
+            let fullText = [];
+            
+            for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+                console.log(`📄 Обработка страницы ${pageNum}/${pdf.numPages}`);
+                const page = await pdf.getPage(pageNum);
+                const textContent = await page.getTextContent();
+                
+                const pageText = textContent.items
+                    .map(item => item.str)
+                    .join(' ');
+                
+                console.log(`   → Извлечено символов: ${pageText.length}`);
+                fullText.push(`--- СТРАНИЦА ${pageNum} ---\n${pageText}\n`);
+            }
+            
+            const result = fullText.join('\n\n');
+            console.log('✅ Всего извлечено символов:', result.length);
+            return result;
+            
+        } catch (error) {
+            console.error('❌ Ошибка при извлечении текста:', error);
+            console.error('   Stack:', error.stack);
+            throw error;
         }
-        
-        return fullText.join('\n\n');
     },
+    
+
 
     /**
      * Очищает текст от артефактов PDF
