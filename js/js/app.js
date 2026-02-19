@@ -47,6 +47,21 @@ const DOM = {
     btnDownloadInstruction: document.getElementById('btn-download-instruction'),
     btnDownloadZip: document.getElementById('btn-download-zip')
 };
+// В начале app.js, после объявления DOM
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('🚀 Приложение запускается...');
+    
+    // Проверка PDF.js
+    if (typeof pdfjsLib === 'undefined') {
+        document.getElementById('process-status').innerHTML = 
+            '<span class="status-error">❌ Ошибка: PDF.js не загружен. Проверьте консоль (F12)</span>';
+        document.getElementById('btn-process').disabled = true;
+        return;
+    }
+    
+    console.log('✅ PDF.js готов, версия:', pdfjsLib.version);
+    
+    // Остальная инициализация
 
 // Инициализация приложения
 function init() {
