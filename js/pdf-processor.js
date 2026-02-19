@@ -88,12 +88,10 @@ const PDFProcessor = {
         return text;
     },
 
-    /**
-     * Извлекает информацию о деле из имени файла
-     * @param {string} filename - Имя файла PDF
-     * @returns {Object} - { caseNumber, decisionDate, rawFilename }
-     */
+
     extractCaseInfo(filename) {
+        console.log('🔍 Парсинг имени файла:', filename);
+    
         const nameWithoutExt = filename.replace(/\.[^/.]+$/, '');
         const parts = nameWithoutExt.split('_');
         
@@ -102,21 +100,33 @@ const PDFProcessor = {
             decisionDate: null,
             rawFilename: filename
         };
-        
+    
         if (parts.length >= 2) {
+            // Номер дела - первая часть (должен содержать дефисы, например А60-49559-2024)
             result.caseNumber = parts[0];
-            
+        
+            // Дата - вторая часть (должна быть 8 цифр YYYYMMDD)
             const dateStr = parts[1];
             if (dateStr && dateStr.length === 8 && /^\d+$/.test(dateStr)) {
-                // Формат YYYYMMDD -> YYYY-MM-DD
                 result.decisionDate = `${dateStr.slice(0,4)}-${dateStr.slice(4,6)}-${dateStr.slice(6,8)}`;
-            } else {
-                result.decisionDate = dateStr;
+            }
+        
+            // Альтернативный поиск даты в других частях имени файла
+            if (!result.decisionDate) {
+                for (let i = 2; i < parts.length; i++) {
+                    const potentialDate = parts[i];
+                    if (potentialDate.length === 8 && /^\d+$/.test(potentialDate)) {
+                        result.decisionDate = `${potentialDate.slice(0,4)}-${potentialDate.slice(4,6)}-${potentialDate.slice(6,8)}`;
+                        console.log('✅ Дата найдена в части', i, ':', result.decisionDate);
+                        break;
+                    }
+                }
             }
         }
-        
+    
+        console.log('📋 Результат парсинга:', result);
         return result;
-    },
+    },,
 
     /**
      * Полная обработка PDF-файла
