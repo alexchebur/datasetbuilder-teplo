@@ -1,15 +1,12 @@
 /**
  * JSONL_HANDLER.JS
  * Создание, загрузка и экспорт JSONL датасетов
+ * Версия: 2.1 (исправлен формат JSONL)
  */
 
 const JSONLHandler = {
     /**
      * Создаёт запись JSONL для датасета
-     * @param {string} caseNumber - Номер дела
-     * @param {string} decisionDate - Дата решения
-     * @param {string} text - Текст решения
-     * @returns {Object} - Запись JSONL
      */
     createEntry(caseNumber, decisionDate, text) {
         return {
@@ -27,10 +24,6 @@ const JSONLHandler = {
 
     /**
      * Создаёт запись для инструктивного датасета
-     * @param {string} caseNumber - Номер дела
-     * @param {string} decisionDate - Дата решения
-     * @param {string} text - Текст решения
-     * @returns {Object} - Instruction entry
      */
     createInstructionEntry(caseNumber, decisionDate, text) {
         return {
@@ -42,30 +35,60 @@ const JSONLHandler = {
 
     /**
      * Конвертирует массив записей в JSONL строку
-     * @param {Array<Object>} entries - Массив записей
-     * @returns {string} - JSONL строка
+     * ВАЖНО: Одна запись = одна строка (стандарт JSONL)
      */
     toJSONL(entries) {
-        return entries.map(entry => JSON.stringify(entry, null, 2)).join('\n');
+        // ✅ ИСПРАВЛЕНО: без форматирования, одна строка на запись
+        return entries.map(entry => JSON.stringify(entry)).join('\n');
     },
 
     /**
      * Парсит JSONL строку в массив записей
-     * @param {string} jsonlString - JSONL строка
-     * @returns {Array<Object>} - Массив записей
+     * С поддержкой многострочных записей (на случай старых файлов)
      */
     fromJSONL(jsonlString) {
         const entries = [];
+        
+        // Метод 1: Быстрый парсинг (одна строка = одна запись)
         const lines = jsonlString.trim().split('\n');
         
         for (const line of lines) {
-            if (line.trim()) {
-                try {
-                    entries.push(JSON.parse(line));
-                } catch (e) {
-                    console.warn('Ошибка парсинга строки JSONL:', line.slice(0, 100));
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            
+            // Пропускаем строки, которые явно не начинаются с {
+            if (!trimmed.startsWith('{')) continue;
+            
+            try {
+                entries.push(JSON.parse(trimmed));
+            } catch (e) {
+                // Если не распарсилось — возможно, это многострочная запись
+                // Пробуем метод 2
+            }
+        }
+        
+        // Если нашли записи — возвращаем
+        if (entries.length > 0) {
+            return entries;
+        }
+        
+        // Метод 2: Парсинг многострочных JSON-объектов (для обратной совместимости)
+        try {
+            // Ищем все JSON-объекты через регулярное выражение
+            const jsonPattern = /\{[\s\S]*?"metadata"\s*:\s*\{[\s\S]*?\}\s*\}/g;
+            const matches = jsonlString.match(jsonPattern);
+            
+            if (matches) {
+                for (const match of matches) {
+                    try {
+                        entries.push(JSON.parse(match));
+                    } catch (e) {
+                        console.warn('Ошибка парсинга JSON-объекта:', match.slice(0, 100));
+                    }
                 }
             }
+        } catch (e) {
+            console.warn('Ошибка при парсинге многострочного JSONL:', e);
         }
         
         return entries;
@@ -73,8 +96,6 @@ const JSONLHandler = {
 
     /**
      * Загружает JSONL из файла
-     * @param {File} file - JSONL файл
-     * @returns {Promise<Array<Object>>} - Массив записей
      */
     async loadFromFile(file) {
         const text = await file.text();
@@ -83,8 +104,6 @@ const JSONLHandler = {
 
     /**
      * Скачивает JSONL файл
-     * @param {Array<Object>} entries - Записи
-     * @param {string} filename - Имя файла
      */
     download(entries, filename = 'court_decisions.jsonl') {
         const jsonl = this.toJSONL(entries);
@@ -94,29 +113,22 @@ const JSONLHandler = {
 
     /**
      * Создаёт ZIP-архив с датасетом
-     * @param {Array<Object>} entries - Основные записи
-     * @param {Array<Object>} instructionEntries - Instruction записи (опционально)
-     * @returns {Promise<Blob>} - ZIP файл
      */
     async createZipArchive(entries, instructionEntries = null) {
         const zip = new JSZip();
         const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
         
-        // Основной датасет
         zip.file('court_decisions_dataset.jsonl', this.toJSONL(entries));
         
-        // Instruction датасет
         if (instructionEntries && instructionEntries.length > 0) {
             zip.file('instruction_dataset.jsonl', this.toJSONL(instructionEntries));
         }
         
-        // Статистика CSV
         if (entries.length > 0) {
             const csvContent = this.generateCSV(entries);
             zip.file('dataset_statistics.csv', csvContent);
         }
         
-        // README
         const readme = this.generateReadme(entries, timestamp);
         zip.file('README.md', readme);
         
@@ -125,8 +137,6 @@ const JSONLHandler = {
 
     /**
      * Генерирует CSV со статистикой
-     * @param {Array<Object>} entries - Записи
-     * @returns {string} - CSV контент
      */
     generateCSV(entries) {
         const headers = ['case_number', 'decision_date', 'text_length'];
@@ -141,9 +151,6 @@ const JSONLHandler = {
 
     /**
      * Генерирует README файл
-     * @param {Array<Object>} entries - Записи
-     * @param {string} timestamp - Временная метка
-     * @returns {string} - README контент
      */
     generateReadme(entries, timestamp) {
         return `# Датасет судебных актов арбитражных судов
@@ -151,46 +158,19 @@ const JSONLHandler = {
 ## Описание
 Датасет содержит тексты судебных решений арбитражных судов России.
 
-## Структура файлов
-- \`court_decisions_dataset.jsonl\` - Основной датасет
-- \`instruction_dataset.jsonl\` - Инструктивный датасет для Fine-tuning
-- \`dataset_statistics.csv\` - Статистика в таблице
-- \`README.md\` - Этот файл
-
 ## Формат записей (JSONL)
 \`\`\`json
-{
-  "case_number": "Номер дела",
-  "decision_date": "Дата решения (YYYY-MM-DD)",
-  "decision_text": "Текст решения",
-  "metadata": {
-    "source": "arbitration_court",
-    "document_type": "court_decision",
-    "language": "ru",
-    "created_at": "ISO-8601 timestamp"
-  }
-}
+{"case_number":"A60-123456-2024","decision_date":"2025-01-15","decision_text":"...","metadata":{"source":"arbitration_court"}}
 \`\`\`
 
 ## Статистика
 - Всего записей: ${entries.length}
 - Дата создания: ${timestamp}
-
-## Назначение
-- Обучение LoRA-адаптеров для юридических LLM
-- Fine-tuning моделей для анализа судебных решений
-- Создание инструктивных датасетов
-
-## Лицензия
-Данные предназначены для исследовательских целей.
 `;
     },
 
     /**
      * Объединяет два датасета, избегая дубликатов
-     * @param {Array<Object>} existing - Существующие записи
-     * @param {Array<Object>} newEntries - Новые записи
-     * @returns {Array<Object>} - Объединённый датасет
      */
     mergeDatasets(existing, newEntries) {
         const existingCases = new Set(
