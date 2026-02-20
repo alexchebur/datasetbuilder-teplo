@@ -1,14 +1,16 @@
 /**
  * PDF_PROCESSOR.JS
  * Обработка PDF-файлов в браузере с использованием pdf.js
+ * Версия: 2.0
  */
 
-// Проверка загрузки PDF.js
+// Проверка загрузки PDF.js при загрузке модуля
 if (typeof pdfjsLib === 'undefined') {
-    console.error('❌ PDF.js не загружен! Проверьте подключение скриптов в index.html');
-    alert('Ошибка: PDF.js не загружен. Проверьте консоль браузера (F12).');
+    console.error('❌ PDF_PROCESSOR: pdfjsLib не загружен! Проверьте порядок скриптов в index.html');
 }
 
+// Экспорт модуля в глобальный scope для отладки
+window.PDFProcessor = null; // Будет assigned ниже
 const PDFProcessor = {
     /**
      * Извлекает текст из PDF-файла
@@ -50,7 +52,7 @@ const PDFProcessor = {
             throw error;
         }
     },
-    
+    window.PDFProcessor = PDFProcessor;
 
 
     /**
