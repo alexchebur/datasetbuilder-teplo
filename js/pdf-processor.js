@@ -1,7 +1,7 @@
 /**
  * PDF_PROCESSOR.JS
  * Обработка PDF-файлов в браузере с использованием pdf.js
- * Версия: 2.0
+ * Версия: 2.1 (исправленная)
  */
 
 // Проверка загрузки PDF.js при загрузке модуля
@@ -9,8 +9,6 @@ if (typeof pdfjsLib === 'undefined') {
     console.error('❌ PDF_PROCESSOR: pdfjsLib не загружен! Проверьте порядок скриптов в index.html');
 }
 
-// Экспорт модуля в глобальный scope для отладки
-window.PDFProcessor = null; // Будет assigned ниже
 const PDFProcessor = {
     /**
      * Извлекает текст из PDF-файла
@@ -52,30 +50,18 @@ const PDFProcessor = {
             throw error;
         }
     },
-    window.PDFProcessor = PDFProcessor;
-
 
     /**
      * Очищает текст от артефактов PDF
-     * @param {string} text - Исходный текст
-     * @returns {string} - Очищенный текст
      */
     cleanText(text) {
         if (!text) return '';
         
-        // Удаление непечатаемых символов
         text = text.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g, '');
-        
-        // Замена множественных пробелов
         text = text.replace(/[ \t]+/g, ' ');
-        
-        // Замена множественных переносов
         text = text.replace(/\n\s*\n/g, '\n\n');
-        
-        // Trim строк
         text = text.split('\n').map(line => line.trim()).join('\n').trim();
         
-        // Замена распространённых артефактов
         const replacements = {
             'ﬁ': 'фи', 'ﬂ': 'фл', 'ﬀ': 'фф', 'ﬃ': 'ффи', 'ﬄ': 'ффл',
             '–': '-', '—': '-', '«': '"', '»': '"', '„': '"', '‚': "'",
@@ -90,7 +76,9 @@ const PDFProcessor = {
         return text;
     },
 
-
+    /**
+     * Извлекает информацию о деле из имени файла
+     */
     extractCaseInfo(filename) {
         console.log('🔍 Парсинг имени файла:', filename);
     
@@ -104,16 +92,13 @@ const PDFProcessor = {
         };
     
         if (parts.length >= 2) {
-            // Номер дела - первая часть (должен содержать дефисы, например А60-49559-2024)
             result.caseNumber = parts[0];
-        
-            // Дата - вторая часть (должна быть 8 цифр YYYYMMDD)
             const dateStr = parts[1];
+            
             if (dateStr && dateStr.length === 8 && /^\d+$/.test(dateStr)) {
                 result.decisionDate = `${dateStr.slice(0,4)}-${dateStr.slice(4,6)}-${dateStr.slice(6,8)}`;
             }
-        
-            // Альтернативный поиск даты в других частях имени файла
+            
             if (!result.decisionDate) {
                 for (let i = 2; i < parts.length; i++) {
                     const potentialDate = parts[i];
@@ -132,13 +117,9 @@ const PDFProcessor = {
 
     /**
      * Полная обработка PDF-файла
-     * @param {File} file - PDF файл
-     * @param {Function} onProgress - Callback для обновления прогресса
-     * @returns {Promise<Object>} - Результат обработки
      */
     async processFile(file, onProgress = null) {
         try {
-            // Шаг 1: Извлечение информации из имени файла
             const fileInfo = this.extractCaseInfo(file.name);
             
             if (!fileInfo.caseNumber || !fileInfo.decisionDate) {
@@ -147,12 +128,10 @@ const PDFProcessor = {
             
             if (onProgress) onProgress(20, 'Извлечение текста из PDF...');
             
-            // Шаг 2: Извлечение текста
             const rawText = await this.extractText(file);
             
             if (onProgress) onProgress(60, 'Очистка текста...');
             
-            // Шаг 3: Очистка текста
             const cleanedText = this.cleanText(rawText);
             
             if (cleanedText.length < 100) {
@@ -178,4 +157,8 @@ const PDFProcessor = {
             };
         }
     }
-};
+}; // ← Закрываем объект ЗДЕСЬ
+
+// ✅ Экспорт в глобальный scope — ПОСЛЕ объекта
+window.PDFProcessor = PDFProcessor;
+console.log('✅ PDFProcessor загружен и экспортирован');
