@@ -1,13 +1,16 @@
 /**
  * PDF_PROCESSOR.JS
  * Обработка PDF-файлов в браузере с использованием pdf.js
- * Версия: 2.1 (исправленная)
+ * Версия: 2.2 (исправлена передача данных в getDocument)
  */
 
-// Проверка загрузки PDF.js при загрузке модуля
+// Проверка загрузки PDF.js
 if (typeof pdfjsLib === 'undefined') {
     console.error('❌ PDF_PROCESSOR: pdfjsLib не загружен! Проверьте порядок скриптов в index.html');
 }
+
+// Экспорт в глобальный scope
+window.PDFProcessor = null;
 
 const PDFProcessor = {
     /**
@@ -20,7 +23,8 @@ const PDFProcessor = {
             const arrayBuffer = await file.arrayBuffer();
             console.log('📦 Размер файла:', arrayBuffer.byteLength, 'байт');
             
-            const loadingTask = pdfjsLib.getDocument({ arrayBuffer });
+            // ✅ ИСПРАВЛЕНО: { data: arrayBuffer } вместо { arrayBuffer }
+            const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
             const pdf = await loadingTask.promise;
             
             console.log('✅ PDF загружен, страниц:', pdf.numPages);
@@ -157,8 +161,8 @@ const PDFProcessor = {
             };
         }
     }
-}; // ← Закрываем объект ЗДЕСЬ
+};
 
-// ✅ Экспорт в глобальный scope — ПОСЛЕ объекта
+// ✅ Экспорт в глобальный scope — ПОСЛЕ определения объекта
 window.PDFProcessor = PDFProcessor;
 console.log('✅ PDFProcessor загружен и экспортирован');
