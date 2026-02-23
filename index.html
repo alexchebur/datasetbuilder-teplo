@@ -98,7 +98,27 @@
                         
                         <div id="preview-metadata" class="mt-3"></div>
                         
-                        <button class="btn btn-warning mt-3" id="btn-save-changes" style="display: none;">💾 Сохранить изменения</button>
+                        <!-- Чекбоксы обжалования -->
+                        <div class="mt-3 p-3 bg-light rounded" id="appeal-status-section">
+                            <h6>📋 Статус обжалования</h6>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="checkbox-appealed">
+                                <label class="form-check-label" for="checkbox-appealed">
+                                    Обжаловалось в апелляции
+                                </label>
+                            </div>
+                            <div class="form-check mt-2">
+                                <input class="form-check-input" type="checkbox" id="checkbox-canceled" disabled>
+                                <label class="form-check-label" for="checkbox-canceled">
+                                    Отменено по итогам обжалования
+                                </label>
+                            </div>
+                            <small class="text-muted d-block mt-2">
+                                ⚠️ Чекбокс "Отменено" доступен только если отмечено "Обжаловалось"
+                            </small>
+                        </div>
+                        
+                        <button class="btn btn-warning mt-3" id="btn-save-changes">💾 Сохранить изменения</button>
                         <div id="save-status" class="mt-2"></div>
                     </div>
                     <div class="col-md-6">
@@ -121,6 +141,8 @@
                                 <th>Номер дела</th>
                                 <th>Дата решения</th>
                                 <th>Длина текста</th>
+                                <th>Обжаловано</th>
+                                <th>Отменено</th>
                                 <th>Статус</th>
                             </tr>
                         </thead>
@@ -164,7 +186,7 @@
                             <h6>📄 JSONL (Основной датасет)</h6>
                             <p>Формат: JSON Lines (одна JSON-запись на строку)<br>
                             Поля: <code>case_number</code>, <code>decision_date</code>, 
-                            <code>decision_text</code>, <code>metadata</code><br>
+                            <code>decision_text</code>, <code>appealed</code>, <code>canceled</code>, <code>metadata</code><br>
                             Кодировка: UTF-8</p>
                             
                             <h6>📚 Instruction Dataset</h6>
@@ -183,7 +205,7 @@
     </div>
 
     <footer class="bg-dark text-white text-center py-3">
-        <p class="mb-0">⚖️ Сборщик датасета судебных актов | Версия 1.0</p>
+        <p class="mb-0">⚖️ Сборщик датасета судебных актов | Версия 2.0</p>
         <p class="mb-0 small">Данные обрабатываются локально в браузере</p>
     </footer>
 
@@ -196,7 +218,7 @@
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     </script>
     
-    <!-- Ваши скрипты (из папки js/) -->
+    <!-- Ваши скрипты -->
     <script src="js/jsonl-handler.js"></script>
     <script src="js/pdf-processor.js"></script>
     <script src="js/app.js"></script>
