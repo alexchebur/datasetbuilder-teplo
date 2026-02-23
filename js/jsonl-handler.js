@@ -3,6 +3,7 @@ JSONL_HANDLER.JS
 Создание, загрузка и экспорт JSONL датасетов
 Версия: 3.0 (с поддержкой полей appealed и canceled)
 */
+
 const JSONLHandler = {
     /**
      * Создаёт запись JSONL для датасета
@@ -27,8 +28,7 @@ const JSONLHandler = {
      * Создаёт запись для инструктивного датасета
      */
     createInstructionEntry(caseNumber, decisionDate, text, appealed = false, canceled = false) {
-        const appealInfo = appealed ? 
-            (canceled ? ' (решение отменено)' : ' (обжаловано)') : '';
+        const appealInfo = appealed ? (canceled ? ' (решение отменено)' : ' (обжаловано)') : '';
         
         return {
             instruction: `Проанализируй судебный акт по делу № ${caseNumber} от ${decisionDate}${appealInfo}`,
@@ -45,7 +45,6 @@ const JSONLHandler = {
     
     /**
      * Конвертирует массив записей в JSONL строку
-     * ВАЖНО: Одна запись = одна строка (стандарт JSONL)
      */
     toJSONL(entries) {
         return entries.map(entry => JSON.stringify(entry)).join('\n');
@@ -53,38 +52,25 @@ const JSONLHandler = {
     
     /**
      * Парсит JSONL строку в массив записей
-     * С поддержкой многострочных записей (на случай старых файлов)
      */
     fromJSONL(jsonlString) {
         const entries = [];
-        
-        // Метод 1: Быстрый парсинг (одна строка = одна запись)
         const lines = jsonlString.trim().split('\n');
         
         for (const line of lines) {
             const trimmed = line.trim();
-            if (!trimmed) continue;
-            
-            if (!trimmed.startsWith('{')) continue;
+            if (!trimmed || !trimmed.startsWith('{')) continue;
             
             try {
                 const entry = JSON.parse(trimmed);
                 // Добавляем значения по умолчанию для старых записей
-                if (entry.appealed === undefined) {
-                    entry.appealed = false;
-                }
-                if (entry.canceled === undefined) {
-                    entry.canceled = false;
-                }
+                if (entry.appealed === undefined) entry.appealed = false;
+                if (entry.canceled === undefined) entry.canceled = false;
                 entries.push(entry);
-            } catch (e) {
-                // Если не распарсилось — возможно, это многострочная запись
-            }
+            } catch (e) {}
         }
         
-        if (entries.length > 0) {
-            return entries;
-        }
+        if (entries.length > 0) return entries;
         
         // Метод 2: Парсинг многострочных JSON-объектов
         try {
@@ -95,21 +81,13 @@ const JSONLHandler = {
                 for (const match of matches) {
                     try {
                         const entry = JSON.parse(match);
-                        if (entry.appealed === undefined) {
-                            entry.appealed = false;
-                        }
-                        if (entry.canceled === undefined) {
-                            entry.canceled = false;
-                        }
+                        if (entry.appealed === undefined) entry.appealed = false;
+                        if (entry.canceled === undefined) entry.canceled = false;
                         entries.push(entry);
-                    } catch (e) {
-                        console.warn('Ошибка парсинга JSON-объекта:', match.slice(0, 100));
-                    }
+                    } catch (e) {}
                 }
             }
-        } catch (e) {
-            console.warn('Ошибка при парсинге многострочного JSONL:', e);
-        }
+        } catch (e) {}
         
         return entries;
     },
@@ -136,7 +114,6 @@ const JSONLHandler = {
      */
     async createZipArchive(entries, instructionEntries = null) {
         const zip = new JSZip();
-        const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
         
         zip.file('court_decisions_dataset.jsonl', this.toJSONL(entries));
         
@@ -145,12 +122,10 @@ const JSONLHandler = {
         }
         
         if (entries.length > 0) {
-            const csvContent = this.generateCSV(entries);
-            zip.file('dataset_statistics.csv', csvContent);
+            zip.file('dataset_statistics.csv', this.generateCSV(entries));
         }
         
-        const readme = this.generateReadme(entries, timestamp);
-        zip.file('README.md', readme);
+        zip.file('README.md', this.generateReadme(entries));
         
         return await zip.generateAsync({ type: 'blob' });
     },
@@ -174,7 +149,7 @@ const JSONLHandler = {
     /**
      * Генерирует README файл
      */
-    generateReadme(entries, timestamp) {
+    generateReadme(entries) {
         const appealedCount = entries.filter(e => e.appealed).length;
         const canceledCount = entries.filter(e => e.canceled).length;
         
@@ -207,7 +182,6 @@ const JSONLHandler = {
 - Всего записей: ${entries.length}
 - Обжаловано: ${appealedCount}
 - Отменено: ${canceledCount}
-- Дата создания: ${timestamp}
 `;
     },
     
@@ -215,24 +189,15 @@ const JSONLHandler = {
      * Объединяет два датасета, избегая дубликатов
      */
     mergeDatasets(existing, newEntries) {
-        const existingCases = new Set(
-            existing.filter(e => e.case_number).map(e => e.case_number)
-        );
+        const existingCases = new Set(existing.filter(e => e.case_number).map(e => e.case_number));
         const merged = [...existing];
         
         for (const entry of newEntries) {
             if (!entry.case_number || !existingCases.has(entry.case_number)) {
-                // Добавляем значения по умолчанию для старых записей
-                if (entry.appealed === undefined) {
-                    entry.appealed = false;
-                }
-                if (entry.canceled === undefined) {
-                    entry.canceled = false;
-                }
+                if (entry.appealed === undefined) entry.appealed = false;
+                if (entry.canceled === undefined) entry.canceled = false;
                 merged.push(entry);
-                if (entry.case_number) {
-                    existingCases.add(entry.case_number);
-                }
+                if (entry.case_number) existingCases.add(entry.case_number);
             }
         }
         
