@@ -1,8 +1,8 @@
 /**
-APP.JS
-Основная логика приложения для сбора датасета судебных актов
-Версия: 3.0 (с поддержкой полей appealed и canceled)
-*/
+ * APP.JS
+ * Основная логика приложения для сбора датасета судебных актов
+ * Версия: 3.1 (с функцией очистки LocalStorage)
+ */
 
 // ============================================================================
 // ГЛОБАЛЬНОЕ СОСТОЯНИЕ ПРИЛОЖЕНИЯ
@@ -61,6 +61,9 @@ function initializeDOM() {
     DOM.btnDownloadJsonl = document.getElementById('btn-download-jsonl');
     DOM.btnDownloadInstruction = document.getElementById('btn-download-instruction');
     DOM.btnDownloadZip = document.getElementById('btn-download-zip');
+
+    // Кнопка очистки данных (НОВОЕ)
+    DOM.btnClearData = document.getElementById('btn-clear-data');
 }
 
 // ============================================================================
@@ -521,6 +524,46 @@ async function handleDownloadZip() {
 }
 
 // ============================================================================
+// НОВАЯ ФУНКЦИЯ: ОЧИСТКА LOCALSTORAGE
+// ============================================================================
+
+function clearLocalStorage() {
+    localStorage.removeItem('court_dataset_builder');
+    console.log('🗑 LocalStorage очищен');
+}
+
+function handleClearDataClick() {
+    if (confirm('⚠️ ВЫ УВЕРЕНЫ?\n\nЭто действие необратимо удалит весь текущий датасет, список обработанных файлов и историю изменений из памяти браузера.\n\nРекомендуется сначала скачать датасет через кнопку "Скачать JSONL".')) {
+        // Сброс состояния приложения
+        AppState.datasetEntries = [];
+        AppState.processedFiles.clear();
+        AppState.lastUpdated = null;
+        AppState.currentPreviewIndex = null;
+        
+        // Очистка хранилища
+        clearLocalStorage();
+        
+        // Сброс интерфейса
+        if (DOM.previewSelect) DOM.previewSelect.value = '';
+        if (DOM.previewMetadata) DOM.previewMetadata.innerHTML = '<p class="text-muted">Выберите запись для просмотра</p>';
+        if (DOM.previewText) DOM.previewText.textContent = '';
+        if (DOM.checkboxAppealed) DOM.checkboxAppealed.checked = false;
+        if (DOM.checkboxCanceled) {
+            DOM.checkboxCanceled.checked = false;
+            DOM.checkboxCanceled.disabled = true;
+        }
+        if (DOM.saveStatus) DOM.saveStatus.innerHTML = '';
+        if (DOM.pdfUpload) DOM.pdfUpload.value = ''; // Сброс input file
+        if (DOM.jsonlUpload) DOM.jsonlUpload.value = '';
+        
+        updateUI();
+        
+        showStatus(DOM.processStatus, '🗑 Датасет полностью очищен', 'success');
+        console.log('✅ Приложение сброшено к начальным настройкам');
+    }
+}
+
+// ============================================================================
 // ОБНОВЛЕНИЕ ИНТЕРФЕЙСА
 // ============================================================================
 
@@ -660,6 +703,11 @@ function init() {
     if (DOM.btnDownloadJsonl) DOM.btnDownloadJsonl.addEventListener('click', handleDownloadJSONL);
     if (DOM.btnDownloadInstruction) DOM.btnDownloadInstruction.addEventListener('click', handleDownloadInstruction);
     if (DOM.btnDownloadZip) DOM.btnDownloadZip.addEventListener('click', handleDownloadZip);
+    
+    // Регистрация обработчика для новой кнопки очистки
+    if (DOM.btnClearData) {
+        DOM.btnClearData.addEventListener('click', handleClearDataClick);
+    }
     
     updateUI();
     
