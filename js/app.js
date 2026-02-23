@@ -1,9 +1,8 @@
 /**
- * APP.JS
- * Основная логика приложения для сбора датасета судебных актов
- * Версия: 2.0 (с улучшенной валидацией и отладкой)
- */
-
+APP.JS
+Основная логика приложения для сбора датасета судебных актов
+Версия: 3.0 (с поддержкой полей appealed и canceled)
+*/
 // ============================================================================
 // ГЛОБАЛЬНОЕ СОСТОЯНИЕ ПРИЛОЖЕНИЯ
 // ============================================================================
@@ -11,14 +10,14 @@ const AppState = {
     datasetEntries: [],
     processedFiles: new Set(),
     lastUpdated: null,
-    isProcessing: false
+    isProcessing: false,
+    currentPreviewIndex: null
 };
 
 // ============================================================================
 // DOM ЭЛЕМЕНТЫ (КЭШИРОВАНИЕ)
 // ============================================================================
 const DOM = {};
-
 function initializeDOM() {
     // Статистика
     DOM.statRecords = document.getElementById('stat-records');
@@ -45,6 +44,12 @@ function initializeDOM() {
     DOM.previewMetadata = document.getElementById('preview-metadata');
     DOM.previewText = document.getElementById('preview-text');
     
+    // Чекбоксы обжалования
+    DOM.checkboxAppealed = document.getElementById('checkbox-appealed');
+    DOM.checkboxCanceled = document.getElementById('checkbox-canceled');
+    DOM.btnSaveChanges = document.getElementById('btn-save-changes');
+    DOM.saveStatus = document.getElementById('save-status');
+    
     // Таблица
     DOM.tableSection = document.getElementById('table-section');
     DOM.recordsBody = document.getElementById('records-body');
@@ -59,16 +64,13 @@ function initializeDOM() {
 // ============================================================================
 // УТИЛИТЫ
 // ============================================================================
-
 /**
- * Отображение статусного сообщения
- */
+Отображение статусного сообщения
+*/
 function showStatus(element, message, type = 'info', autoClear = true) {
     if (!element) return;
-    
     const className = `status-${type}`;
     element.innerHTML = `<span class="${className}">${message}</span>`;
-    
     if (autoClear && type !== 'error') {
         setTimeout(() => {
             if (element.innerHTML.includes(message)) {
@@ -79,58 +81,44 @@ function showStatus(element, message, type = 'info', autoClear = true) {
 }
 
 /**
- * Обновление прогресс-бара
- */
+Обновление прогресс-бара
+*/
 function updateProgress(percent, message) {
     if (!DOM.processProgress || !DOM.processProgressContainer) return;
-    
     DOM.processProgress.style.width = `${percent}%`;
     DOM.processProgress.textContent = `${percent}%`;
-    
     if (message && DOM.processStatus) {
         DOM.processStatus.innerHTML = `<span class="status-info">${message}</span>`;
     }
 }
 
 /**
- * Проверка: является ли файл PDF
- */
+Проверка: является ли файл PDF
+*/
 function isValidPDF(file) {
-    // Проверка по типу MIME
     if (file.type === 'application/pdf') {
         return true;
     }
-    
-    // Проверка по расширению (на случай неправильного MIME)
     if (file.name && file.name.toLowerCase().endsWith('.pdf')) {
         return true;
     }
-    
     return false;
 }
 
 /**
- * Проверка размера файла (макс 50 MB)
- */
+Проверка размера файла (макс 50 MB)
+*/
 function isValidFileSize(file, maxSizeMB = 50) {
     const maxSizeBytes = maxSizeMB * 1024 * 1024;
     return file.size <= maxSizeBytes;
 }
 
 /**
- * Извлечение информации о деле из имени файла
- * Поддерживаемые форматы:
- * - A60-49559-2024_20250616_Reshenija.pdf
- * - A60-49559-2024_20250616_Reshenija_i_postanovlenija.pdf
- * - A60-49559-2024_20250616_Anything.pdf
- */
+Извлечение информации о деле из имени файла
+*/
 function extractCaseInfo(filename) {
     console.log('🔍 Парсинг имени файла:', filename);
-    
-    // Удаляем расширение
     const nameWithoutExt = filename.replace(/\.[^/.]+$/, '');
-    
-    // Разделяем по подчёркиванию
     const parts = nameWithoutExt.split('_');
     
     const result = {
@@ -141,31 +129,25 @@ function extractCaseInfo(filename) {
         errors: []
     };
     
-    // Нужно минимум 2 части: номер дела и дата
     if (parts.length < 2) {
         result.errors.push('Недостаточно частей в имени файла (ожидается формат: НомерДела_Дата_*.pdf)');
         console.warn('❌ Недостаточно частей:', parts);
         return result;
     }
     
-    // Часть 1: Номер дела (должен содержать дефисы, например А60-49559-2024)
     result.caseNumber = parts[0];
     
-    // Валидация номера дела
     if (!result.caseNumber || result.caseNumber.length < 5) {
         result.errors.push(`Некорректный номер дела: "${result.caseNumber}"`);
         console.warn('❌ Некорректный номер дела:', result.caseNumber);
         return result;
     }
     
-    // Часть 2: Дата (должна быть 8 цифр YYYYMMDD)
     const dateStr = parts[1];
-    
     if (!dateStr || dateStr.length !== 8 || !/^\d+$/.test(dateStr)) {
         result.errors.push(`Некорректная дата: "${dateStr}" (ожидается формат YYYYMMDD)`);
         console.warn('❌ Некорректная дата:', dateStr);
         
-        // Пытаемся найти дату в других частях
         for (let i = 2; i < parts.length; i++) {
             const potentialDate = parts[i];
             if (potentialDate.length === 8 && /^\d+$/.test(potentialDate)) {
@@ -179,32 +161,27 @@ function extractCaseInfo(filename) {
             return result;
         }
     } else {
-        // Конвертируем YYYYMMDD → YYYY-MM-DD
         result.decisionDate = `${dateStr.slice(0,4)}-${dateStr.slice(4,6)}-${dateStr.slice(6,8)}`;
     }
     
-    // Валидация даты (проверка на разумность)
     if (result.decisionDate) {
         const year = parseInt(result.decisionDate.split('-')[0]);
         if (year < 2000 || year > 2030) {
             result.errors.push(`Подозрительный год в дате: ${year}`);
             console.warn('⚠️ Подозрительный год:', year);
-            // Не блокируем, но предупреждаем
         }
     }
     
     result.isValid = true;
     console.log('✅ Имя файла валидно:', result);
-    
     return result;
 }
 
 /**
- * Комплексная валидация файла
- */
+Комплексная валидация файла
+*/
 function validateFile(file) {
     console.log('🔍 Валидация файла:', file.name);
-    
     const validation = {
         isValid: false,
         file: file,
@@ -213,48 +190,40 @@ function validateFile(file) {
         caseInfo: null
     };
     
-    // 1. Проверка: это PDF?
     if (!isValidPDF(file)) {
         validation.errors.push('Файл не является PDF');
         console.warn('❌ Не PDF файл');
         return validation;
     }
     
-    // 2. Проверка размера
     if (!isValidFileSize(file)) {
         validation.errors.push('Файл слишком большой (максимум 50 MB)');
         console.warn('❌ Файл слишком большой:', file.size);
         return validation;
     }
     
-    // 3. Проверка имени файла
     validation.caseInfo = extractCaseInfo(file.name);
-    
     if (!validation.caseInfo.isValid) {
         validation.errors.push(...validation.caseInfo.errors);
         console.warn('❌ Ошибки имени файла:', validation.caseInfo.errors);
         return validation;
     }
     
-    // 4. Проверка: не обрабатывали ли уже этот файл?
     if (AppState.processedFiles.has(file.name)) {
         validation.warnings.push('Файл уже был обработан ранее');
         console.warn('⚠️ Файл уже обработан:', file.name);
-        // Не блокируем, но предупреждаем
     }
     
     validation.isValid = true;
     console.log('✅ Файл прошёл валидацию:', validation);
-    
     return validation;
 }
 
 /**
- * Валидация всех выбранных файлов
- */
+Валидация всех выбранных файлов
+*/
 function validateFiles(files) {
     console.log('🔍 Валидация группы файлов:', files.length);
-    
     const results = {
         validFiles: [],
         invalidFiles: [],
@@ -264,7 +233,6 @@ function validateFiles(files) {
     for (let i = 0; i < files.length; i++) {
         const file = files[i];
         const validation = validateFile(file);
-        
         if (validation.isValid) {
             results.validFiles.push(validation);
         } else {
@@ -277,22 +245,18 @@ function validateFiles(files) {
     }
     
     console.log('📊 Результаты валидации:', results);
-    
     return results;
 }
 
 // ============================================================================
 // ОБРАБОТЧИКИ СОБЫТИЙ
 // ============================================================================
-
 /**
- * Обработчик изменения выбора PDF файлов
- */
+Обработчик изменения выбора PDF файлов
+*/
 function handlePDFUploadChange(event) {
     console.log('📁 Событие изменения PDF файлов');
-    
     const files = event.target.files;
-    
     if (!files || files.length === 0) {
         DOM.btnProcess.disabled = true;
         showStatus(DOM.processStatus, '', 'info', false);
@@ -300,47 +264,33 @@ function handlePDFUploadChange(event) {
     }
     
     console.log(`📁 Выбрано файлов: ${files.length}`);
-    
-    // Валидируем все файлы
     const validationResults = validateFiles(files);
     
-    // Формируем сообщение о статусе
     let statusHTML = '';
-    
     if (validationResults.validFiles.length > 0) {
         const sizeInfo = validationResults.validFiles.reduce((sum, v) => sum + v.file.size, 0);
         const sizeMB = (sizeInfo / 1024 / 1024).toFixed(2);
-        
         statusHTML = `
             <span class="status-success">
                 ✅ Готово к обработке: ${validationResults.validFiles.length} из ${validationResults.totalFiles} файлов 
                 (${sizeMB} MB)
             </span>
         `;
-        
-        // Активируем кнопку
         DOM.btnProcess.disabled = false;
     }
     
-    // Добавляем информацию о проблемных файлах
     if (validationResults.invalidFiles.length > 0) {
-        statusHTML += `
-            <details style="margin-top: 0.5rem;">
-                <summary style="cursor: pointer; color: #dc3545;">
-                    ⚠️ ${validationResults.invalidFiles.length} файл(ов) не прошли проверку (нажмите для деталей)
-                </summary>
-                <ul style="margin-top: 0.5rem; padding-left: 1.5rem; font-size: 0.85rem;">
-                    ${validationResults.invalidFiles.map(f => `
-                        <li>
-                            <strong>${f.file.name}</strong>: 
-                            ${f.errors.join('; ')}
-                        </li>
-                    `).join('')}
-                </ul>
-            </details>
-        `;
+        statusHTML += `<details style="margin-top: 0.5rem;">
+            <summary style="cursor: pointer; color: #dc3545;">
+                ⚠️ ${validationResults.invalidFiles.length} файл(ов) не прошли проверку (нажмите для деталей)
+            </summary>
+            <ul style="margin-top: 0.5rem; padding-left: 1.5rem; font-size: 0.85rem;">
+                ${validationResults.invalidFiles.map(f => `
+                    <li>${f.file.name}: ${f.errors.join('; ')}</li>
+                `).join('')}
+            </ul>
+        </details>`;
         
-        // Если нет валидных файлов — деактивируем кнопку
         if (validationResults.validFiles.length === 0) {
             DOM.btnProcess.disabled = true;
         }
@@ -350,13 +300,11 @@ function handlePDFUploadChange(event) {
 }
 
 /**
- * Обработчик загрузки JSONL
- */
+Обработчик загрузки JSONL
+*/
 async function handleLoadJSONL() {
     console.log('📂 Загрузка JSONL');
-    
     const file = DOM.jsonlUpload?.files?.[0];
-    
     if (!file) {
         showStatus(DOM.loadStatus, '❌ Выберите файл JSONL', 'error');
         return;
@@ -364,7 +312,6 @@ async function handleLoadJSONL() {
     
     try {
         showStatus(DOM.loadStatus, '🔄 Загрузка датасета...', 'info', false);
-        
         const text = await file.text();
         const entries = JSONLHandler.fromJSONL(text);
         
@@ -373,7 +320,6 @@ async function handleLoadJSONL() {
             return;
         }
         
-        // Объединение с существующими записями
         const previousCount = AppState.datasetEntries.length;
         AppState.datasetEntries = JSONLHandler.mergeDatasets(
             AppState.datasetEntries,
@@ -381,7 +327,6 @@ async function handleLoadJSONL() {
         );
         const newCount = AppState.datasetEntries.length;
         
-        // Обновление processedFiles
         entries.forEach(e => {
             if (e.metadata?.source_filename) {
                 AppState.processedFiles.add(e.metadata.source_filename);
@@ -398,7 +343,6 @@ async function handleLoadJSONL() {
         );
         
         updateUI();
-        
     } catch (error) {
         console.error('Ошибка загрузки JSONL:', error);
         showStatus(DOM.loadStatus, `❌ Ошибка: ${error.message}`, 'error');
@@ -406,13 +350,11 @@ async function handleLoadJSONL() {
 }
 
 /**
- * Обработчик обработки PDF файлов
- */
+Обработчик обработки PDF файлов
+*/
 async function handleProcessPDFs() {
     console.log('🔄 Начало обработки PDF файлов');
-    
     const files = DOM.pdfUpload?.files;
-    
     if (!files || files.length === 0) {
         showStatus(DOM.processStatus, '❌ Файлы не выбраны', 'error');
         return;
@@ -423,7 +365,6 @@ async function handleProcessPDFs() {
         return;
     }
     
-    // Блокируем повторный запуск
     AppState.isProcessing = true;
     DOM.btnProcess.disabled = true;
     DOM.processProgressContainer.classList.add('show');
@@ -436,13 +377,11 @@ async function handleProcessPDFs() {
         for (let i = 0; i < totalFiles; i++) {
             const file = files[i];
             
-            // Пропускаем уже обработанные (но не блокируем)
             if (AppState.processedFiles.has(file.name)) {
                 console.log('⏭️ Пропущен уже обработанный файл:', file.name);
                 continue;
             }
             
-            // Валидация
             const validation = validateFile(file);
             
             if (!validation.isValid) {
@@ -451,28 +390,23 @@ async function handleProcessPDFs() {
                 continue;
             }
             
-            // Обновляем прогресс
             const progress = Math.round(((i) / totalFiles) * 100);
             updateProgress(progress, `Обработка ${i + 1}/${totalFiles}: ${file.name}`);
             
-            // Обработка файла
             const result = await PDFProcessor.processFile(file, (p, msg) => {
                 const subProgress = Math.round((i + p / 100) / totalFiles * 100);
                 updateProgress(subProgress, msg);
             });
             
             if (result.success) {
-                // Создаём запись JSONL
                 const entry = JSONLHandler.createEntry(
                     result.caseNumber,
                     result.decisionDate,
                     result.text
                 );
                 
-                // Добавляем имя файла в метаданные
                 entry.metadata.source_filename = result.filename;
                 
-                // Добавляем в датасет
                 AppState.datasetEntries.push(entry);
                 AppState.processedFiles.add(file.name);
                 processedCount++;
@@ -484,13 +418,11 @@ async function handleProcessPDFs() {
             }
         }
         
-        // Финальное обновление
         AppState.lastUpdated = new Date().toISOString();
         saveToLocalStorage();
         
         updateProgress(100, '✅ Обработка завершена!');
         
-        // Итоговое сообщение
         let finalMessage = `✅ Успешно обработано: ${processedCount} из ${totalFiles} файлов`;
         if (errorCount > 0) {
             finalMessage += ` (ошибок: ${errorCount})`;
@@ -499,19 +431,15 @@ async function handleProcessPDFs() {
         showStatus(DOM.processStatus, finalMessage, 'success');
         
         updateUI();
-        
     } catch (error) {
         console.error('Критическая ошибка обработки:', error);
         showStatus(DOM.processStatus, `❌ Ошибка: ${error.message}`, 'error');
     } finally {
-        // Разблокируем интерфейс
         AppState.isProcessing = false;
         
-        // Скрываем прогресс через 2 секунды
         setTimeout(() => {
             DOM.processProgressContainer.classList.remove('show');
             
-            // Обновляем состояние кнопки
             if (DOM.pdfUpload?.files?.length > 0) {
                 const validationResults = validateFiles(DOM.pdfUpload.files);
                 DOM.btnProcess.disabled = validationResults.validFiles.length === 0;
@@ -523,16 +451,16 @@ async function handleProcessPDFs() {
 }
 
 /**
- * Обработчик выбора записи для предпросмотра
- */
+Обработчик выбора записи для предпросмотра
+*/
 function handlePreviewChange() {
     const index = DOM.previewSelect?.value;
-    
-    if (!index && index !== 0) {
+    if (index === '' || index === null) {
         return;
     }
     
-    const entry = AppState.datasetEntries[index];
+    AppState.currentPreviewIndex = parseInt(index);
+    const entry = AppState.datasetEntries[AppState.currentPreviewIndex];
     
     if (!entry) {
         return;
@@ -545,12 +473,22 @@ function handlePreviewChange() {
             <p><strong>Дата решения:</strong> ${entry.decision_date || '—'}</p>
             <p><strong>Длина текста:</strong> ${(entry.decision_text?.length || 0).toLocaleString('ru-RU')} символов</p>
             <p><strong>Создано:</strong> ${entry.metadata?.created_at?.slice(0, 19) || '—'}</p>
-            ${entry.metadata?.source_filename ? 
-                `<p><strong>Файл:</strong> ${entry.metadata.source_filename}</p>` : ''}
+            ${entry.metadata?.source_filename ? `<p><strong>Файл:</strong> ${entry.metadata.source_filename}</p>` : ''}
         `;
     }
     
-    // Обновляем текст (первые 2000 символов)
+    // Обновляем чекбоксы
+    if (DOM.checkboxAppealed) {
+        DOM.checkboxAppealed.checked = entry.appealed || false;
+    }
+    
+    if (DOM.checkboxCanceled) {
+        DOM.checkboxCanceled.checked = entry.canceled || false;
+        // Блокируем/разблокируем чекбокс canceled в зависимости от appealed
+        DOM.checkboxCanceled.disabled = !(entry.appealed || false);
+    }
+    
+    // Обновляем текст
     if (DOM.previewText) {
         const previewText = entry.decision_text?.slice(0, 2000) || '';
         DOM.previewText.textContent = previewText + 
@@ -559,11 +497,90 @@ function handlePreviewChange() {
 }
 
 /**
- * Обработчик скачивания JSONL
- */
+Обработчик изменения чекбокса "Обжаловалось"
+*/
+function handleAppealedChange() {
+    if (!DOM.checkboxAppealed || !DOM.checkboxCanceled) return;
+    
+    const isAppealed = DOM.checkboxAppealed.checked;
+    
+    // Если appealed снят, то canceled тоже должен быть снят и заблокирован
+    if (!isAppealed) {
+        DOM.checkboxCanceled.checked = false;
+        DOM.checkboxCanceled.disabled = true;
+    } else {
+        // Если appealed установлен, разблокируем canceled
+        DOM.checkboxCanceled.disabled = false;
+    }
+}
+
+/**
+Обработчик изменения чекбокса "Отменено"
+*/
+function handleCanceledChange() {
+    if (!DOM.checkboxAppealed || !DOM.checkboxCanceled) return;
+    
+    const isCanceled = DOM.checkboxCanceled.checked;
+    
+    // Если canceled установлен, appealed должен быть установлен
+    if (isCanceled && !DOM.checkboxAppealed.checked) {
+        DOM.checkboxAppealed.checked = true;
+    }
+}
+
+/**
+Обработчик сохранения изменений чекбоксов
+*/
+function handleSaveChanges() {
+    if (AppState.currentPreviewIndex === null || AppState.currentPreviewIndex === undefined) {
+        showStatus(DOM.saveStatus, '❌ Выберите запись для сохранения', 'error');
+        return;
+    }
+    
+    const entry = AppState.datasetEntries[AppState.currentPreviewIndex];
+    if (!entry) {
+        showStatus(DOM.saveStatus, '❌ Запись не найдена', 'error');
+        return;
+    }
+    
+    // Обновляем значения
+    entry.appealed = DOM.checkboxAppealed?.checked || false;
+    entry.canceled = DOM.checkboxCanceled?.checked || false;
+    
+    // Валидация: canceled не может быть true без appealed
+    if (entry.canceled && !entry.appealed) {
+        entry.canceled = false;
+        if (DOM.checkboxCanceled) {
+            DOM.checkboxCanceled.checked = false;
+        }
+        showStatus(DOM.saveStatus, '⚠️ "Отменено" сброшено (требуется "Обжаловалось")', 'warning');
+        return;
+    }
+    
+    // Обновляем метаданные
+    entry.metadata.updated_at = new Date().toISOString();
+    
+    // Сохраняем
+    saveToLocalStorage();
+    
+    // Обновляем таблицу
+    updateRecordsTable();
+    
+    showStatus(DOM.saveStatus, '✅ Изменения сохранены', 'success');
+    
+    // Очищаем статус через 3 секунды
+    setTimeout(() => {
+        if (DOM.saveStatus) {
+            DOM.saveStatus.innerHTML = '';
+        }
+    }, 3000);
+}
+
+/**
+Обработчик скачивания JSONL
+*/
 function handleDownloadJSONL() {
     console.log('📥 Скачивание JSONL');
-    
     if (AppState.datasetEntries.length === 0) {
         alert('Датасет пуст!');
         return;
@@ -577,11 +594,10 @@ function handleDownloadJSONL() {
 }
 
 /**
- * Обработчик скачивания Instruction Dataset
- */
+Обработчик скачивания Instruction Dataset
+*/
 function handleDownloadInstruction() {
     console.log('📥 Скачивание Instruction Dataset');
-    
     if (AppState.datasetEntries.length === 0) {
         alert('Датасет пуст!');
         return;
@@ -591,7 +607,9 @@ function handleDownloadInstruction() {
         JSONLHandler.createInstructionEntry(
             e.case_number,
             e.decision_date,
-            e.decision_text
+            e.decision_text,
+            e.appealed,
+            e.canceled
         )
     );
     
@@ -603,11 +621,10 @@ function handleDownloadInstruction() {
 }
 
 /**
- * Обработчик скачивания ZIP-архива
- */
+Обработчик скачивания ZIP-архива
+*/
 async function handleDownloadZip() {
     console.log('📦 Скачивание ZIP-архива');
-    
     if (AppState.datasetEntries.length === 0) {
         alert('Датасет пуст!');
         return;
@@ -617,7 +634,9 @@ async function handleDownloadZip() {
         JSONLHandler.createInstructionEntry(
             e.case_number,
             e.decision_date,
-            e.decision_text
+            e.decision_text,
+            e.appealed,
+            e.canceled
         )
     );
     
@@ -633,7 +652,6 @@ async function handleDownloadZip() {
         saveAs(zipBlob, `court_dataset_${timestamp}.zip`);
         
         showStatus(DOM.processStatus, '✅ Архив скачан!', 'success');
-        
     } catch (error) {
         console.error('Ошибка создания ZIP:', error);
         showStatus(DOM.processStatus, `❌ Ошибка: ${error.message}`, 'error');
@@ -643,10 +661,9 @@ async function handleDownloadZip() {
 // ============================================================================
 // ОБНОВЛЕНИЕ ИНТЕРФЕЙСА
 // ============================================================================
-
 /**
- * Обновление всей UI
- */
+Обновление всей UI
+*/
 function updateUI() {
     console.log('🔄 Обновление интерфейса');
     
@@ -654,11 +671,9 @@ function updateUI() {
     if (DOM.statRecords) {
         DOM.statRecords.textContent = AppState.datasetEntries.length.toLocaleString('ru-RU');
     }
-    
     if (DOM.statProcessed) {
         DOM.statProcessed.textContent = AppState.processedFiles.size.toLocaleString('ru-RU');
     }
-    
     if (DOM.statChars) {
         const totalChars = AppState.datasetEntries.reduce(
             (sum, e) => sum + (e.decision_text?.length || 0),
@@ -673,7 +688,6 @@ function updateUI() {
             .map(e => e.decision_date)
             .filter(d => d && /^\d{4}-\d{2}-\d{2}$/.test(d))
             .sort();
-        
         if (dates.length > 0) {
             DOM.statDateRange.textContent = `${dates[0]} — ${dates[dates.length - 1]}`;
         } else {
@@ -694,44 +708,41 @@ function updateUI() {
     
     // Показ/скрытие секций
     const hasData = AppState.datasetEntries.length > 0;
-    
     if (DOM.previewSection) {
         DOM.previewSection.style.display = hasData ? 'block' : 'none';
     }
-    
     if (DOM.tableSection) {
         DOM.tableSection.style.display = hasData ? 'block' : 'none';
     }
-    
     if (DOM.exportSection) {
         DOM.exportSection.style.display = hasData ? 'block' : 'none';
     }
 }
 
 /**
- * Обновление выпадающего списка предпросмотра
- */
+Обновление выпадающего списка предпросмотра
+*/
 function updatePreviewSelect() {
     if (!DOM.previewSelect) return;
     
     DOM.previewSelect.innerHTML = '<option value="">Выберите запись...</option>';
-    
     AppState.datasetEntries.forEach((entry, index) => {
         const option = document.createElement('option');
         option.value = index;
-        option.textContent = `${entry.case_number || '—'} от ${entry.decision_date || '—'}`;
+        const appealedBadge = entry.appealed ? ' [🔄]' : '';
+        const canceledBadge = entry.canceled ? ' [❌]' : '';
+        option.textContent = `${entry.case_number || '—'} от ${entry.decision_date || '—'}${appealedBadge}${canceledBadge}`;
         DOM.previewSelect.appendChild(option);
     });
 }
 
 /**
- * Обновление таблицы записей
- */
+Обновление таблицы записей
+*/
 function updateRecordsTable() {
     if (!DOM.recordsBody) return;
     
     DOM.recordsBody.innerHTML = '';
-    
     AppState.datasetEntries.forEach((entry, index) => {
         const row = document.createElement('tr');
         row.className = 'fade-in';
@@ -742,17 +753,17 @@ function updateRecordsTable() {
             <td><code>${entry.case_number || '—'}</code></td>
             <td>${entry.decision_date || '—'}</td>
             <td>${(entry.decision_text?.length || 0).toLocaleString('ru-RU')}</td>
+            <td>${entry.appealed ? '<span class="badge bg-warning">🔄 Да</span>' : '<span class="badge bg-secondary">Нет</span>'}</td>
+            <td>${entry.canceled ? '<span class="badge bg-danger">❌ Да</span>' : '<span class="badge bg-secondary">Нет</span>'}</td>
             <td><span class="badge bg-success">✅</span></td>
         `;
         
-        // Клик по строке для предпросмотра
         row.addEventListener('click', () => {
             if (DOM.previewSelect) {
                 DOM.previewSelect.value = index;
             }
             handlePreviewChange();
             
-            // Прокрутка к предпросмотру
             if (DOM.previewSection) {
                 DOM.previewSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }
@@ -766,10 +777,9 @@ function updateRecordsTable() {
 // ============================================================================
 // LOCALSTORAGE (СОХРАНЕНИЕ/ЗАГРУЗКА)
 // ============================================================================
-
 /**
- * Сохранение в localStorage
- */
+Сохранение в localStorage
+*/
 function saveToLocalStorage() {
     try {
         const data = {
@@ -777,7 +787,6 @@ function saveToLocalStorage() {
             processedFiles: Array.from(AppState.processedFiles),
             lastUpdated: AppState.lastUpdated
         };
-        
         localStorage.setItem('court_dataset_builder', JSON.stringify(data));
         console.log('💾 Данные сохранены в localStorage');
     } catch (error) {
@@ -786,12 +795,11 @@ function saveToLocalStorage() {
 }
 
 /**
- * Загрузка из localStorage
- */
+Загрузка из localStorage
+*/
 function loadFromLocalStorage() {
     try {
         const saved = localStorage.getItem('court_dataset_builder');
-        
         if (saved) {
             const data = JSON.parse(saved);
             
@@ -813,14 +821,11 @@ function loadFromLocalStorage() {
 // ============================================================================
 // ИНИЦИАЛИЗАЦИЯ ПРИЛОЖЕНИЯ
 // ============================================================================
-
 function init() {
     console.log('🚀 Инициализация приложения...');
     
-    // Инициализация DOM
     initializeDOM();
     
-    // Проверка готовности PDF.js
     if (typeof pdfjsLib === 'undefined') {
         console.error('❌ PDF.js не загружен!');
         showStatus(
@@ -839,10 +844,9 @@ function init() {
     
     console.log('✅ PDF.js готов, версия:', pdfjsLib.version);
     
-    // Загрузка сохранённых данных
     loadFromLocalStorage();
     
-    // Навешиваем обработчики событий
+    // Обработчики событий
     if (DOM.btnLoadJsonl) {
         DOM.btnLoadJsonl.addEventListener('click', handleLoadJSONL);
     }
@@ -859,6 +863,20 @@ function init() {
         DOM.previewSelect.addEventListener('change', handlePreviewChange);
     }
     
+    // Обработчики чекбоксов
+    if (DOM.checkboxAppealed) {
+        DOM.checkboxAppealed.addEventListener('change', handleAppealedChange);
+    }
+    
+    if (DOM.checkboxCanceled) {
+        DOM.checkboxCanceled.addEventListener('change', handleCanceledChange);
+    }
+    
+    if (DOM.btnSaveChanges) {
+        DOM.btnSaveChanges.addEventListener('click', handleSaveChanges);
+    }
+    
+    // Обработчики экспорта
     if (DOM.btnDownloadJsonl) {
         DOM.btnDownloadJsonl.addEventListener('click', handleDownloadJSONL);
     }
@@ -871,10 +889,8 @@ function init() {
         DOM.btnDownloadZip.addEventListener('click', handleDownloadZip);
     }
     
-    // Обновление интерфейса
     updateUI();
     
-    // Инициализация кнопки Process (проверка выбранных файлов)
     if (DOM.pdfUpload && DOM.pdfUpload.files && DOM.pdfUpload.files.length > 0) {
         handlePDFUploadChange({ target: DOM.pdfUpload });
     }
@@ -885,24 +901,19 @@ function init() {
 // ============================================================================
 // ЭКСПОРТ ДЛЯ ОТЛАДКИ В КОНСОЛИ
 // ============================================================================
-
-// Функция для тестирования парсинга имён файлов
 window.testFilenameParsing = function(filename) {
     console.log('🧪 Тест парсинга имени файла:', filename);
     const result = extractCaseInfo(filename);
     console.log('📋 Результат:', result);
-    
     if (result.isValid) {
         console.log('✅ Имя файла валидно!');
     } else {
         console.log('❌ Имя файла НЕ валидно!');
         result.errors.forEach(e => console.log('   -', e));
     }
-    
     return result;
 };
 
-// Функция для очистки датасета
 window.clearDataset = function() {
     if (confirm('Очистить весь датасет? Это действие нельзя отменить.')) {
         AppState.datasetEntries = [];
@@ -914,7 +925,6 @@ window.clearDataset = function() {
     }
 };
 
-// Функция для экспорта состояния
 window.exportState = function() {
     console.log('📊 Текущее состояние:', {
         entries: AppState.datasetEntries.length,
@@ -926,5 +936,4 @@ window.exportState = function() {
 // ============================================================================
 // ЗАПУСК ПРИ ЗАГРУЗКЕ DOM
 // ============================================================================
-
 document.addEventListener('DOMContentLoaded', init);
