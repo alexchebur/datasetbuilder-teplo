@@ -148,7 +148,7 @@ const PDFProcessor = {
         
         // 2. ✅ ИСПРАВЛЕНИЕ: Удаление "призрачных" пробелов между русскими буквами
         // Это основная причина проблем типа "судебног о"
-        // text = text.replace(/([а-яА-ЯёЁ])\s+([а-яА-ЯёЁ])/g, '$1$2');
+        text = text.replace(/([а-яА-ЯёЁ])\s+([а-яА-ЯёЁ])/g, '$1$2');
         
         // 3. Удаление множественных пробелов (кроме случаев между словами)
         text = text.replace(/[ \t]{3,}/g, ' ');
@@ -184,7 +184,7 @@ const PDFProcessor = {
         if (spaceRatio > 0.25) {
             console.warn('⚠️ Аномально высокое количество пробелов:', spaceRatio);
             // Агрессивная очистка
-            text = text.replace(/([а-яА-ЯёЁ])\s+([а-яА-ЯёЁ])/g, '$1$2');
+            //text = text.replace(/([а-яА-ЯёЁ])\s+([а-яА-ЯёЁ])/g, '$1$2');
             text = text.replace(/\s{2,}/g, ' ');
         }
         
@@ -346,4 +346,4 @@ const PDFProcessor = {
 // ============================================================================
 window.PDFProcessor = PDFProcessor;
 console.log('✅ PDFProcessor загружен и экспортирован в window.PDFProcessor');
-console.log('   Доступные методы:', Object.keys(PDFProcessor).join(', '));
+console.log('   Доступные методы:', Object.keys(PDFProcessor).join(', '));fагр
