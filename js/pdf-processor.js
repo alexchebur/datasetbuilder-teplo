@@ -1,44 +1,75 @@
 /**
  * PDF_PROCESSOR.JS
  * Обработка PDF-файлов в браузере с использованием pdf.js
- * Версия: 2.2 (исправлена передача данных в getDocument)
+ * Версия: 3.0 (полностью исправленная)
+ * 
+ * Исправления:
+ * - Корректная передача данных в pdfjsLib.getDocument()
+ * - Правильный экспорт в глобальный scope
+ * - Улучшенная очистка текста для русских документов
+ * - Гибкий парсинг имён файлов
+ * - Детальное логирование для отладки
  */
 
-// Проверка загрузки PDF.js
+// ============================================================================
+// ПРОВЕРКА ЗАГРУЗКИ PDF.JS
+// ============================================================================
 if (typeof pdfjsLib === 'undefined') {
     console.error('❌ PDF_PROCESSOR: pdfjsLib не загружен! Проверьте порядок скриптов в index.html');
+    console.error('   PDF.js должен быть подключён ДО pdf-processor.js');
 }
 
-// Экспорт в глобальный scope
+// Экспорт в глобальный scope (будет assigned после определения объекта)
 window.PDFProcessor = null;
 
+// ============================================================================
+// ОСНОВНОЙ ОБЪЕКТ PDFPROCESSOR
+// ============================================================================
 const PDFProcessor = {
+    
+    // ============================================================================
+    // ИЗВЛЕЧЕНИЕ ТЕКСТА ИЗ PDF
+    // ============================================================================
     /**
      * Извлекает текст из PDF-файла
+     * @param {File} file - PDF файл
+     * @returns {Promise<string>} - Извлечённый текст
      */
     async extractText(file) {
         console.log('🔍 Начало извлечения текста из:', file.name);
         
         try {
+            // Чтение файла как ArrayBuffer
             const arrayBuffer = await file.arrayBuffer();
             console.log('📦 Размер файла:', arrayBuffer.byteLength, 'байт');
             
-            // ✅ ИСПРАВЛЕНО: { data: arrayBuffer } вместо { arrayBuffer }
+            // ✅ КРИТИЧНО: передаём { data: arrayBuffer }, а не { arrayBuffer }
             const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
             const pdf = await loadingTask.promise;
             
             console.log('✅ PDF загружен, страниц:', pdf.numPages);
             
+            // Проверка на зашифрованный PDF
+            if (pdf._pdfInfo?.encrypted) {
+                throw new Error('PDF защищён паролем и не может быть обработан');
+            }
+            
             let fullText = [];
             
             for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
                 console.log(`📄 Обработка страницы ${pageNum}/${pdf.numPages}`);
+                
                 const page = await pdf.getPage(pageNum);
                 const textContent = await page.getTextContent();
                 
-                const pageText = textContent.items
-                    .map(item => item.str)
-                    .join(' ');
+                // Проверка: есть ли текст на странице
+                if (!textContent.items || textContent.items.length === 0) {
+                    console.warn(`⚠️ Страница ${pageNum} не содержит извлекаемого текста (возможно, скан)`);
+                    continue;
+                }
+                
+                // Умное объединение текста с учётом позиции элементов
+                const pageText = this.reconstructTextFromItems(textContent.items);
                 
                 console.log(`   → Извлечено символов: ${pageText.length}`);
                 fullText.push(`--- СТРАНИЦА ${pageNum} ---\n${pageText}\n`);
@@ -46,6 +77,7 @@ const PDFProcessor = {
             
             const result = fullText.join('\n\n');
             console.log('✅ Всего извлечено символов:', result.length);
+            
             return result;
             
         } catch (error) {
@@ -55,17 +87,80 @@ const PDFProcessor = {
         }
     },
 
+    // ============================================================================
+    // РЕКОНСТРУКЦИЯ ТЕКСТА С УЧЁТОМ ПОЗИЦИИ
+    // ============================================================================
+    /**
+     * Реконструкция текста с учётом позиции элементов на странице
+     * @param {Array} items - Элементы текста из pdf.js
+     * @returns {string} - Восстановленный текст
+     */
+    reconstructTextFromItems(items) {
+        if (!items || items.length === 0) return '';
+        
+        // Фильтруем пустые элементы
+        const validItems = items.filter(item => 
+            item.str && item.str.trim().length > 0
+        );
+        
+        if (validItems.length === 0) return '';
+        
+        let textLines = [];
+        let currentLine = [];
+        let lastY = null;
+        const Y_THRESHOLD = 5; // Порог для определения новой строки (в пунктах)
+        
+        for (const item of validItems) {
+            // Y-координата в pdf.js: transform[5]
+            const currentY = item.transform[5];
+            
+            // Если Y изменился значительно — новая строка
+            if (lastY !== null && Math.abs(currentY - lastY) > Y_THRESHOLD) {
+                textLines.push(currentLine.join(' '));
+                currentLine = [];
+            }
+            
+            currentLine.push(item.str);
+            lastY = currentY;
+        }
+        
+        // Добавляем последнюю строку
+        if (currentLine.length > 0) {
+            textLines.push(currentLine.join(' '));
+        }
+        
+        return textLines.join('\n');
+    },
+
+    // ============================================================================
+    // ОЧИСТКА ТЕКСТА
+    // ============================================================================
     /**
      * Очищает текст от артефактов PDF
+     * @param {string} text - Исходный текст
+     * @returns {string} - Очищенный текст
      */
     cleanText(text) {
         if (!text) return '';
         
+        // 1. Удаление непечатаемых символов
         text = text.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g, '');
-        text = text.replace(/[ \t]+/g, ' ');
+        
+        // 2. ✅ ИСПРАВЛЕНИЕ: Удаление "призрачных" пробелов между русскими буквами
+        // Это основная причина проблем типа "судебног о"
+        text = text.replace(/([а-яА-ЯёЁ])\s+([а-яА-ЯёЁ])/g, '$1$2');
+        
+        // 3. Удаление множественных пробелов (кроме случаев между словами)
+        text = text.replace(/[ \t]{3,}/g, ' ');
+        
+        // 4. Замена множественных переносов на двойной
         text = text.replace(/\n\s*\n/g, '\n\n');
+        text = text.replace(/\n{3,}/g, '\n\n');
+        
+        // 5. Trim строк
         text = text.split('\n').map(line => line.trim()).join('\n').trim();
         
+        // 6. Замена распространённых артефактов PDF
         const replacements = {
             'ﬁ': 'фи', 'ﬂ': 'фл', 'ﬀ': 'фф', 'ﬃ': 'ффи', 'ﬄ': 'ффл',
             '–': '-', '—': '-', '«': '"', '»': '"', '„': '"', '‚': "'",
@@ -77,69 +172,151 @@ const PDFProcessor = {
             text = text.split(oldChar).join(newChar);
         }
         
+        // 7. Удаление пробелов перед знаками препинания
+        text = text.replace(/\s+([.,;:!?])/g, '$1');
+        
+        // 8. Удаление пробелов после открывающих скобок/кавычек
+        text = text.replace(/([\(\["])\s+/g, '$1');
+        text = text.replace(/\s+([\)\]"])/g, '$1');
+        
+        // 9. Проверка на аномальное количество пробелов
+        const spaceRatio = (text.match(/\s+/g) || []).length / text.length;
+        if (spaceRatio > 0.25) {
+            console.warn('⚠️ Аномально высокое количество пробелов:', spaceRatio);
+            // Агрессивная очистка
+            text = text.replace(/([а-яА-ЯёЁ])\s+([а-яА-ЯёЁ])/g, '$1$2');
+            text = text.replace(/\s{2,}/g, ' ');
+        }
+        
         return text;
     },
 
+    // ============================================================================
+    // ПАРСИНГ ИМЕНИ ФАЙЛА
+    // ============================================================================
     /**
      * Извлекает информацию о деле из имени файла
+     * Поддерживаемые форматы:
+     * - A60-49559-2024_20250616_Reshenija.pdf
+     * - A60-49559-2024_20250616_Reshenija_i_postanovlenija.pdf
+     * - A60-XXXXX-YYYY_YYYYMMDD_*.pdf
+     * 
+     * @param {string} filename - Имя файла PDF
+     * @returns {Object} - { caseNumber, decisionDate, rawFilename, isValid, errors }
      */
     extractCaseInfo(filename) {
         console.log('🔍 Парсинг имени файла:', filename);
-    
+        
+        // Удаляем расширение
         const nameWithoutExt = filename.replace(/\.[^/.]+$/, '');
+        
+        // Разделяем по подчёркиванию
         const parts = nameWithoutExt.split('_');
         
         const result = {
             caseNumber: null,
             decisionDate: null,
-            rawFilename: filename
+            rawFilename: filename,
+            isValid: false,
+            errors: []
         };
-    
-        if (parts.length >= 2) {
-            result.caseNumber = parts[0];
-            const dateStr = parts[1];
+        
+        // Нужно минимум 2 части: номер дела и дата
+        if (parts.length < 2) {
+            result.errors.push('Недостаточно частей в имени файла (ожидается формат: НомерДела_Дата_*.pdf)');
+            console.warn('❌ Недостаточно частей:', parts);
+            return result;
+        }
+        
+        // Часть 1: Номер дела (должен содержать дефисы, например А60-49559-2024)
+        result.caseNumber = parts[0];
+        
+        // Валидация номера дела
+        if (!result.caseNumber || result.caseNumber.length < 5) {
+            result.errors.push(`Некорректный номер дела: "${result.caseNumber}"`);
+            console.warn('❌ Некорректный номер дела:', result.caseNumber);
+            return result;
+        }
+        
+        // Часть 2: Дата (должна быть 8 цифр YYYYMMDD)
+        const dateStr = parts[1];
+        
+        if (!dateStr || dateStr.length !== 8 || !/^\d+$/.test(dateStr)) {
+            result.errors.push(`Некорректная дата: "${dateStr}" (ожидается формат YYYYMMDD)`);
+            console.warn('❌ Некорректная дата:', dateStr);
             
-            if (dateStr && dateStr.length === 8 && /^\d+$/.test(dateStr)) {
-                result.decisionDate = `${dateStr.slice(0,4)}-${dateStr.slice(4,6)}-${dateStr.slice(6,8)}`;
+            // Пытаемся найти дату в других частях
+            for (let i = 2; i < parts.length; i++) {
+                const potentialDate = parts[i];
+                if (potentialDate.length === 8 && /^\d+$/.test(potentialDate)) {
+                    result.decisionDate = `${potentialDate.slice(0,4)}-${potentialDate.slice(4,6)}-${potentialDate.slice(6,8)}`;
+                    console.log('✅ Дата найдена в части', i, ':', result.decisionDate);
+                    break;
+                }
             }
             
             if (!result.decisionDate) {
-                for (let i = 2; i < parts.length; i++) {
-                    const potentialDate = parts[i];
-                    if (potentialDate.length === 8 && /^\d+$/.test(potentialDate)) {
-                        result.decisionDate = `${potentialDate.slice(0,4)}-${potentialDate.slice(4,6)}-${potentialDate.slice(6,8)}`;
-                        console.log('✅ Дата найдена в части', i, ':', result.decisionDate);
-                        break;
-                    }
-                }
+                return result;
+            }
+        } else {
+            // Конвертируем YYYYMMDD → YYYY-MM-DD
+            result.decisionDate = `${dateStr.slice(0,4)}-${dateStr.slice(4,6)}-${dateStr.slice(6,8)}`;
+        }
+        
+        // Валидация даты (проверка на разумность)
+        if (result.decisionDate) {
+            const year = parseInt(result.decisionDate.split('-')[0]);
+            if (year < 2000 || year > 2030) {
+                result.errors.push(`Подозрительный год в дате: ${year}`);
+                console.warn('⚠️ Подозрительный год:', year);
+                // Не блокируем, но предупреждаем
             }
         }
-    
-        console.log('📋 Результат парсинга:', result);
+        
+        result.isValid = true;
+        console.log('✅ Имя файла валидно:', result);
+        
         return result;
     },
 
+    // ============================================================================
+    // ПОЛНАЯ ОБРАБОТКА ФАЙЛА
+    // ============================================================================
     /**
      * Полная обработка PDF-файла
+     * @param {File} file - PDF файл
+     * @param {Function} onProgress - Callback для обновления прогресса (percent, message)
+     * @returns {Promise<Object>} - Результат обработки
      */
     async processFile(file, onProgress = null) {
         try {
+            // Шаг 1: Извлечение информации из имени файла
             const fileInfo = this.extractCaseInfo(file.name);
             
-            if (!fileInfo.caseNumber || !fileInfo.decisionDate) {
-                throw new Error(`Не удалось извлечь данные из имени файла: ${file.name}`);
+            if (!fileInfo.isValid) {
+                return {
+                    success: false,
+                    error: fileInfo.errors.join('; '),
+                    filename: file.name
+                };
             }
             
             if (onProgress) onProgress(20, 'Извлечение текста из PDF...');
             
+            // Шаг 2: Извлечение текста
             const rawText = await this.extractText(file);
             
             if (onProgress) onProgress(60, 'Очистка текста...');
             
+            // Шаг 3: Очистка текста
             const cleanedText = this.cleanText(rawText);
             
             if (cleanedText.length < 100) {
-                throw new Error('Текст слишком короткий после очистки');
+                return {
+                    success: false,
+                    error: 'Текст слишком короткий после очистки (< 100 символов)',
+                    filename: file.name
+                };
             }
             
             if (onProgress) onProgress(100, 'Готово!');
@@ -154,6 +331,7 @@ const PDFProcessor = {
             };
             
         } catch (error) {
+            console.error('❌ Критическая ошибка processFile:', error);
             return {
                 success: false,
                 error: error.message,
@@ -163,6 +341,9 @@ const PDFProcessor = {
     }
 };
 
-// ✅ Экспорт в глобальный scope — ПОСЛЕ определения объекта
+// ============================================================================
+// ЭКСПОРТ В ГЛОБАЛЬНЫЙ SCOPE (ПОСЛЕ ОПРЕДЕЛЕНИЯ ОБЪЕКТА!)
+// ============================================================================
 window.PDFProcessor = PDFProcessor;
-console.log('✅ PDFProcessor загружен и экспортирован');
+console.log('✅ PDFProcessor загружен и экспортирован в window.PDFProcessor');
+console.log('   Доступные методы:', Object.keys(PDFProcessor).join(', '));
