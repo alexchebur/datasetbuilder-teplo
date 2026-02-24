@@ -821,11 +821,16 @@ function loadFromLocalStorage() {
 // ============================================================================
 // ИНИЦИАЛИЗАЦИЯ ПРИЛОЖЕНИЯ
 // ============================================================================
+// ============================================================================
+// ИНИЦИАЛИЗАЦИЯ ПРИЛОЖЕНИЯ
+// ============================================================================
 function init() {
     console.log('🚀 Инициализация приложения...');
     
+    // Инициализация DOM
     initializeDOM();
-    
+
+    // Проверка готовности PDF.js
     if (typeof pdfjsLib === 'undefined') {
         console.error('❌ PDF.js не загружен!');
         showStatus(
@@ -841,65 +846,63 @@ function init() {
         
         return;
     }
-    
+
     console.log('✅ PDF.js готов, версия:', pdfjsLib.version);
-    
+
+    // Загрузка сохранённых данных
     loadFromLocalStorage();
+
+    // Навешиваем обработчики событий
     
-    // Обработчики событий
+    // 1. Загрузка JSONL
     if (DOM.btnLoadJsonl) {
         DOM.btnLoadJsonl.addEventListener('click', handleLoadJSONL);
     }
-    
+
+    // 2. Загрузка PDF
     if (DOM.pdfUpload) {
         DOM.pdfUpload.addEventListener('change', handlePDFUploadChange);
     }
-    
+
+    // 3. Обработка PDF
     if (DOM.btnProcess) {
         DOM.btnProcess.addEventListener('click', handleProcessPDFs);
     }
-    
+
+    // 4. Предпросмотр
     if (DOM.previewSelect) {
         DOM.previewSelect.addEventListener('change', handlePreviewChange);
     }
-    
-    // Обработчики чекбоксов
-    if (DOM.checkboxAppealed) {
-        DOM.checkboxAppealed.addEventListener('change', handleAppealedChange);
-    }
-    
-    if (DOM.checkboxCanceled) {
-        DOM.checkboxCanceled.addEventListener('change', handleCanceledChange);
-    }
-    
-    if (DOM.btnSaveChanges) {
-        DOM.btnSaveChanges.addEventListener('click', handleSaveChanges);
-    }
-    
-    // Обработчики экспорта
+
+    // 5. Экспорт (JSONL)
     if (DOM.btnDownloadJsonl) {
         DOM.btnDownloadJsonl.addEventListener('click', handleDownloadJSONL);
     }
-    
+
+    // 6. Экспорт (Instruction)
     if (DOM.btnDownloadInstruction) {
         DOM.btnDownloadInstruction.addEventListener('click', handleDownloadInstruction);
     }
-    
+
+    // 7. Экспорт (ZIP) - ✅ ИСПРАВЛЕНО: добавлена закрывающая скобка
     if (DOM.btnDownloadZip) {
         DOM.btnDownloadZip.addEventListener('click', handleDownloadZip);
     }
-    // ✅ ОБРАБОТЧИК ОЧИСТКИ (добавлено)
+
+    // 8. Очистка датасета - ✅ ДОБАВЛЕНО
     const btnClear = document.getElementById('btn-clear-data');
     if (btnClear) {
-        btnClear.addEventListener('click', window.clearDataset);    
+        btnClear.addEventListener('click', window.clearDataset);
     }
 
+    // Обновление интерфейса
     updateUI();
-    
+
+    // Инициализация кнопки Process (проверка выбранных файлов)
     if (DOM.pdfUpload && DOM.pdfUpload.files && DOM.pdfUpload.files.length > 0) {
         handlePDFUploadChange({ target: DOM.pdfUpload });
     }
-    
+
     console.log('✅ Приложение инициализировано');
 }
 
