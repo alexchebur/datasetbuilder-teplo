@@ -1,7 +1,7 @@
 /**
 PDF_PROCESSOR.JS
 Обработка PDF-файлов в браузере с использованием pdf.js
-Версия: 2.2 (исправлена передача данных в getDocument)
+Версия: 3.0 (исправлена передача данных в getDocument)
 */
 
 // Проверка загрузки PDF.js
@@ -23,7 +23,7 @@ const PDFProcessor = {
             const arrayBuffer = await file.arrayBuffer();
             console.log('📦 Размер файла:', arrayBuffer.byteLength, 'байт');
             
-            // ✅ ИСПРАВЛЕНО: { data: arrayBuffer } вместо { arrayBuffer }
+            // ✅ Правильный формат для pdf.js v3.x
             const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
             const pdf = await loadingTask.promise;
             
@@ -163,6 +163,6 @@ const PDFProcessor = {
     }
 };
 
-// ✅ Экспорт в глобальный scope — ПОСЛЕ определения объекта
+// Экспорт в глобальный scope — ПОСЛЕ определения объекта
 window.PDFProcessor = PDFProcessor;
 console.log('✅ PDFProcessor загружен и экспортирован');
