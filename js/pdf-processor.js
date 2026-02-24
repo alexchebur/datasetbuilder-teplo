@@ -22,6 +22,7 @@ const PDFProcessor = {
             const arrayBuffer = await file.arrayBuffer();
             console.log('📦 Размер файла:', arrayBuffer.byteLength, 'байт');
             
+            // Используем правильный формат для pdf.js
             const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
             const pdf = await loadingTask.promise;
             
@@ -40,10 +41,9 @@ const PDFProcessor = {
                 let pageLines = [];
                 let currentLineParts = [];
                 
-                // Переменные для анализа
                 let lastItem = null;
                 
-                // Вычисляем средний размер шрифта для этой страницы
+                // 1. Вычисляем средний размер шрифта для этой страницы
                 let totalHeight = 0;
                 let count = 0;
                 items.forEach(item => {
@@ -54,8 +54,8 @@ const PDFProcessor = {
                 });
                 const avgFontSize = count > 0 ? totalHeight / count : 12;
                 
-                // Пороги
-                // Если разрыв меньше 20% высоты шрифта -> это часть слова (склеиваем)
+                // 2. Настраиваем пороги
+                // Если разрыв меньше 20% высоты шрифта -> это часть слова (склеиваем БЕЗ пробела)
                 const WORD_GAP_THRESHOLD = avgFontSize * 0.2; 
                 // Если разрыв по Y больше 50% высоты шрифта -> новая строка
                 const LINE_HEIGHT_THRESHOLD = avgFontSize * 0.5;
@@ -70,16 +70,13 @@ const PDFProcessor = {
                         continue;
                     }
 
-                    // Координаты
-                    // transform: [scaleX, skewY, skewX, scaleY, x, y]
+                    // Координаты: transform = [scaleX, skewY, skewX, scaleY, x, y]
                     const x = item.transform[4];
                     const y = item.transform[5];
                     
-                    // Приблизительная ширина элемента (если нет width, считаем примерно)
+                    // Приблизительная ширина элемента
                     const width = item.width || (str.length * avgFontSize * 0.6);
                     const xEnd = x + width;
-
-                    let action = 'NEW_WORD'; // По умолчанию считаем новым словом
 
                     if (lastItem) {
                         const lastX = lastItem.transform[4];
@@ -90,7 +87,7 @@ const PDFProcessor = {
                         const deltaY = Math.abs(y - lastY);
                         const gap = x - lastXEnd;
 
-                        // 1. Проверка на новую строку
+                        // А. Проверка на новую строку
                         if (deltaY > LINE_HEIGHT_THRESHOLD || x < lastX) {
                             // Сохраняем текущую строку
                             if (currentLineParts.length > 0) {
@@ -101,7 +98,7 @@ const PDFProcessor = {
                             continue;
                         }
 
-                        // 2. Проверка разрыва внутри строки
+                        // Б. Проверка разрыва внутри строки
                         if (gap > WORD_GAP_THRESHOLD) {
                             // Большой разрыв -> добавляем пробел перед словом
                             currentLineParts.push(' ' + str);
@@ -256,4 +253,4 @@ const PDFProcessor = {
 };
 
 window.PDFProcessor = PDFProcessor;
-console.log('✅ PDFProcessor v4.0 загружен');
+console.log('✅ PDFProcessor v4.0 загружен (Геометрический анализ)');
