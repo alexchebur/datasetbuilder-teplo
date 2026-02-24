@@ -3,13 +3,19 @@ PDF_PROCESSOR.JS
 Обработка PDF-файлов в браузере с использованием pdf.js
 Версия: 2.2 (исправлена передача данных в getDocument)
 */
+
+// Проверка загрузки PDF.js
 if (typeof pdfjsLib === 'undefined') {
     console.error('❌ PDF_PROCESSOR: pdfjsLib не загружен! Проверьте порядок скриптов в index.html');
 }
 
+// Экспорт в глобальный scope
 window.PDFProcessor = null;
 
 const PDFProcessor = {
+    /**
+     * Извлекает текст из PDF-файла
+     */
     async extractText(file) {
         console.log('🔍 Начало извлечения текста из:', file.name);
         
@@ -17,7 +23,8 @@ const PDFProcessor = {
             const arrayBuffer = await file.arrayBuffer();
             console.log('📦 Размер файла:', arrayBuffer.byteLength, 'байт');
             
-            const loadingTask = pdfjsLib.getDocument({  arrayBuffer });
+            // ✅ ИСПРАВЛЕНО: { data: arrayBuffer } вместо { arrayBuffer }
+            const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
             const pdf = await loadingTask.promise;
             
             console.log('✅ PDF загружен, страниц:', pdf.numPages);
@@ -47,7 +54,10 @@ const PDFProcessor = {
             throw error;
         }
     },
-    
+
+    /**
+     * Очищает текст от артефактов PDF
+     */
     cleanText(text) {
         if (!text) return '';
         
@@ -69,10 +79,13 @@ const PDFProcessor = {
         
         return text;
     },
-    
+
+    /**
+     * Извлекает информацию о деле из имени файла
+     */
     extractCaseInfo(filename) {
         console.log('🔍 Парсинг имени файла:', filename);
-        
+
         const nameWithoutExt = filename.replace(/\.[^/.]+$/, '');
         const parts = nameWithoutExt.split('_');
         
@@ -81,7 +94,7 @@ const PDFProcessor = {
             decisionDate: null,
             rawFilename: filename
         };
-        
+
         if (parts.length >= 2) {
             result.caseNumber = parts[0];
             const dateStr = parts[1];
@@ -101,11 +114,14 @@ const PDFProcessor = {
                 }
             }
         }
-        
+
         console.log('📋 Результат парсинга:', result);
         return result;
     },
-    
+
+    /**
+     * Полная обработка PDF-файла
+     */
     async processFile(file, onProgress = null) {
         try {
             const fileInfo = this.extractCaseInfo(file.name);
@@ -147,5 +163,6 @@ const PDFProcessor = {
     }
 };
 
+// ✅ Экспорт в глобальный scope — ПОСЛЕ определения объекта
 window.PDFProcessor = PDFProcessor;
 console.log('✅ PDFProcessor загружен и экспортирован');
