@@ -1,7 +1,7 @@
 /**
 PDF_PROCESSOR.JS
 Обработка PDF-файлов в браузере с использованием pdf.js
-Версия: 3.0 (исправлена передача данных в getDocument)
+Версия: 3.1 (Исправлено разбиение слов: умное объединение на основе координат)
 */
 
 // Проверка загрузки PDF.js
@@ -14,7 +14,7 @@ window.PDFProcessor = null;
 
 const PDFProcessor = {
     /**
-     * Извлекает текст из PDF-файла
+     * Извлекает текст из PDF-файла с сохранением целостности слов
      */
     async extractText(file) {
         console.log('🔍 Начало извлечения текста из:', file.name);
@@ -23,7 +23,6 @@ const PDFProcessor = {
             const arrayBuffer = await file.arrayBuffer();
             console.log('📦 Размер файла:', arrayBuffer.byteLength, 'байт');
             
-            // ✅ Правильный формат для pdf.js v3.x
             const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
             const pdf = await loadingTask.promise;
             
@@ -36,12 +35,74 @@ const PDFProcessor = {
                 const page = await pdf.getPage(pageNum);
                 const textContent = await page.getTextContent();
                 
-                const pageText = textContent.items
-                    .map(item => item.str)
-                    .join(' ');
+                // Получаем параметры страницы для масштабирования координат
+                const viewport = page.getViewport({ scale: 1.0 });
+                const items = textContent.items;
                 
-                console.log(`   → Извлечено символов: ${pageText.length}`);
-                fullText.push(`--- СТРАНИЦА ${pageNum} ---\n${pageText}\n`);
+                if (items.length === 0) continue;
+
+                let pageLines = [];
+                let currentLine = [];
+                let lastItem = null;
+                
+                // Порог расстояния для определения разрыва слова (примерно ширина пробела)
+                // Вычисляем динамически на основе среднего размера шрифта
+                let avgFontSize = 0;
+                items.forEach(item => avgFontSize += item.height);
+                avgFontSize = avgFontSize / items.length;
+                const spaceThreshold = avgFontSize * 0.3; 
+
+                for (let i = 0; i < items.length; i++) {
+                    const item = items[i];
+                    
+                    // Пропускаем пустые элементы
+                    if (!item.str || !item.str.trim()) {
+                        lastItem = item;
+                        continue;
+                    }
+
+                    const isNewLine = lastItem && (
+                        Math.abs(item.transform[5] - lastItem.transform[5]) > avgFontSize * 0.5 || // Сменилась строка по Y
+                        item.transform[4] < lastItem.transform[4] // Началось слева (новый абзац)
+                    );
+
+                    if (isNewLine) {
+                        // Сохраняем предыдущую строку
+                        if (currentLine.length > 0) {
+                            pageLines.push(currentLine.join(''));
+                        }
+                        currentLine = [item.str];
+                    } else {
+                        // Та же строка: проверяем расстояние по X
+                        if (lastItem) {
+                            const lastXEnd = lastItem.transform[4] + (lastItem.width || 0);
+                            const currXStart = item.transform[4];
+                            const gap = currXStart - lastXEnd;
+
+                            // Если разрыв маленький (меньше порога), склеиваем без пробела
+                            if (gap > 0 && gap < spaceThreshold) {
+                                currentLine.push(item.str);
+                            } else if (gap >= spaceThreshold) {
+                                // Большой разрыв — добавляем пробел
+                                currentLine.push(' ' + item.str);
+                            } else {
+                                // Отрицательный gap (наложение) или 0 — склеиваем плотно
+                                currentLine.push(item.str);
+                            }
+                        } else {
+                            currentLine.push(item.str);
+                        }
+                    }
+                    
+                    lastItem = item;
+                }
+                
+                // Добавляем последнюю строку
+                if (currentLine.length > 0) {
+                    pageLines.push(currentLine.join(''));
+                }
+
+                fullText.push(`--- СТРАНИЦА ${pageNum} ---\n${pageLines.join('\n')}\n`);
             }
             
             const result = fullText.join('\n\n');
@@ -56,21 +117,30 @@ const PDFProcessor = {
     },
 
     /**
-     * Очищает текст от артефактов PDF
+     * Очищает текст от артефактов PDF (более мягкая очистка)
      */
     cleanText(text) {
         if (!text) return '';
         
+        // Удаляем только управляющие символы, оставляя пробелы и переносы строк
         text = text.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g, '');
-        text = text.replace(/[ \t]+/g, ' ');
-        text = text.replace(/\n\s*\n/g, '\n\n');
+        
+        // Заменяем табуляцию на пробел, но не схлопываем множественные пробелы внутри строк сразу
+        text = text.replace(/\t/g, ' ');
+        
+        // Нормализуем множественные переносы строк (более 2 подряд)
+        text = text.replace(/\n{3,}/g, '\n\n');
+        
+        // Убираем пробелы в начале и конце каждой строки, но не трогаем внутренние
         text = text.split('\n').map(line => line.trim()).join('\n').trim();
         
+        // Замена лигатур и спецсимволов
         const replacements = {
             'ﬁ': 'фи', 'ﬂ': 'фл', 'ﬀ': 'фф', 'ﬃ': 'ффи', 'ﬄ': 'ффл',
-            '–': '-', '—': '-', '«': '"', '»': '"', '„': '"', '‚': "'",
-            '′': "'", '″': '"', '…': '...', '•': '-', '©': '(c)',
-            '®': '(R)', '™': '(TM)',
+            '–': '-', '—': '-', 
+            '«': '"', '»': '"', '„': '"', '‚': "'",
+            '′': "'", '″': '"', '…': '...', '•': '-', 
+            '©': '(c)', '®': '(R)', '™': '(TM)',
         };
         
         for (const [oldChar, newChar] of Object.entries(replacements)) {
@@ -163,6 +233,6 @@ const PDFProcessor = {
     }
 };
 
-// Экспорт в глобальный scope — ПОСЛЕ определения объекта
+// Экспорт в глобальный scope
 window.PDFProcessor = PDFProcessor;
-console.log('✅ PDFProcessor загружен и экспортирован');
+console.log('✅ PDFProcessor загружен и экспортирован (v3.1)');
