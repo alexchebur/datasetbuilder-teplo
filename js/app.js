@@ -887,8 +887,12 @@ function init() {
     
     if (DOM.btnDownloadZip) {
         DOM.btnDownloadZip.addEventListener('click', handleDownloadZip);
+    // ✅ ОБРАБОТЧИК ОЧИСТКИ (добавлено)
+    const btnClear = document.getElementById('btn-clear-data');
+    if (btnClear) {
+        btnClear.addEventListener('click', window.clearDataset);    
     }
-    
+
     updateUI();
     
     if (DOM.pdfUpload && DOM.pdfUpload.files && DOM.pdfUpload.files.length > 0) {
