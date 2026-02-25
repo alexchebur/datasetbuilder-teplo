@@ -1,19 +1,17 @@
 /**
-PDF_PROCESSOR.JS
-Обработка PDF-файлов с использованием pdf-text-reader
-Версия: 6.0 (pdf-text-reader + минимальная очистка)
-*/
+ * PDF_PROCESSOR.JS
+ * Обработка PDF-файлов в браузере с использованием unpdf
+ * Версия: 6.0 (на базе unpdf)
+ */
 
-// Проверка загрузки библиотеки
-if (typeof PDFTextReader === 'undefined') {
-    console.error('❌ PDF_PROCESSOR: PDFTextReader не загружен! Проверьте index.html');
-}
+// Импортируем необходимые функции из unpdf
+import { extractText, getDocumentProxy } from 'unpdf';
 
 window.PDFProcessor = null;
 
 const PDFProcessor = {
     /**
-     * Извлекает текст из PDF с помощью pdf-text-reader
+     * Извлекает текст из PDF-файла с помощью unpdf
      */
     async extractText(file) {
         console.log('🔍 Начало извлечения текста из:', file.name);
@@ -22,50 +20,62 @@ const PDFProcessor = {
             const arrayBuffer = await file.arrayBuffer();
             console.log('📦 Размер файла:', arrayBuffer.byteLength, 'байт');
             
-            // ✅ Используем pdf-text-reader вместо raw pdf.js
-            const reader = new PDFTextReader();
-            const text = await reader.read(arrayBuffer);
+            // Преобразуем ArrayBuffer в Uint8Array (требуется unpdf)
+            const uint8Array = new Uint8Array(arrayBuffer);
             
-            console.log('✅ Текст извлечён, символов:', text.length);
+            // Получаем proxy документа
+            const pdf = await getDocumentProxy(uint8Array);
+            
+            // Извлекаем текст с объединением всех страниц в одну строку
+            const { text } = await extractText(pdf, { mergePages: true });
+            
+            console.log('✅ Текст успешно извлечен, длина:', text.length);
             return text;
             
         } catch (error) {
             console.error('❌ Ошибка при извлечении текста:', error);
-            console.error('   Stack:', error.stack);
             throw error;
         }
     },
 
     /**
-     * Минимальная очистка текста (сохраняет все пробелы)
+     * Мягкая очистка текста (без изменений)
      */
     cleanText(text) {
         if (!text) return '';
         
-        // 1. Удаляем ТОЛЬКО управляющие символы (не пробелы!)
+        // Удаляем управляющие символы (кроме переносов строк и табуляции)
         text = text.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g, '');
         
-        // 2. Заменяем табуляцию на пробел
-        text = text.replace(/\t/g, ' ');
+        // Нормализуем переносы строк
+        text = text.replace(/\r\n/g, '\n');
+        text = text.replace(/\r/g, '\n');
         
-        // 3. Убираем пробелы ПЕРЕД знаками препинания (частая ошибка PDF)
+        // Убираем пробелы ПЕРЕД знаками препинания (иногда остаются)
         text = text.replace(/\s+([.,;:!?])/g, '$1');
         
-        // 4. Добавляем пробел ПОСЛЕ знаков препинания, если нет
-        text = text.replace(/([.,;:!?])([а-яА-ЯёЁ0-9])/g, '$1 $2');
+        // Восстанавливаем пробелы ПОСЛЕ знаков препинания, если они слиплись
+        text = text.replace(/([.,;:!?])([а-яА-ЯёЁa-zA-Z0-9])/g, '$1 $2');
         
-        // 5. Нормализуем множественные переносы строк (3+ → 2)
+        // Убираем множественные пробелы
+        text = text.replace(/[ ]{2,}/g, ' ');
+        
+        // Нормализуем множественные переносы строк (не больше двух подряд)
         text = text.replace(/\n{3,}/g, '\n\n');
         
-        // 6. Trim каждой строки (пробелы по краям)
-        text = text.split('\n').map(line => line.trim()).join('\n').trim();
+        // Trim каждой строки (убираем лишние пробелы в начале/конце строк)
+        text = text.split('\n').map(line => line.trim()).join('\n');
         
-        // 7. Замена лигатур (без агрессивных замен)
+        // Общий trim
+        text = text.trim();
+        
+        // Замена лигатур и спецсимволов
         const replacements = {
-            'ﬁ': 'фи', 'ﬂ': 'фл', 'ﬀ': 'фф', 'ﬃ': 'ффи', 'ﬄ': 'ффл',
-            '–': '-', '—': '-',
+            'ﬁ': 'fi', 'ﬂ': 'fl', 'ﬀ': 'ff', 'ﬃ': 'ffi', 'ﬄ': 'ffl',
+            '–': '-', '—': '-', 
             '«': '"', '»': '"', '„': '"', '‚': "'",
-            '…': '...', '•': '-',
+            '′': "'", '″': '"', '…': '...', '•': '-', 
+            '©': '(c)', '®': '(R)', '™': '(TM)',
         };
         
         for (const [oldChar, newChar] of Object.entries(replacements)) {
@@ -76,11 +86,10 @@ const PDFProcessor = {
     },
 
     /**
-     * Извлекает информацию о деле из имени файла
+     * Извлекает информацию о деле из имени файла (без изменений)
      */
     extractCaseInfo(filename) {
         console.log('🔍 Парсинг имени файла:', filename);
-
         const nameWithoutExt = filename.replace(/\.[^/.]+$/, '');
         const parts = nameWithoutExt.split('_');
         
@@ -103,19 +112,16 @@ const PDFProcessor = {
                     const potentialDate = parts[i];
                     if (potentialDate.length === 8 && /^\d+$/.test(potentialDate)) {
                         result.decisionDate = `${potentialDate.slice(0,4)}-${potentialDate.slice(4,6)}-${potentialDate.slice(6,8)}`;
-                        console.log('✅ Дата найдена в части', i, ':', result.decisionDate);
                         break;
                     }
                 }
             }
         }
-
-        console.log('📋 Результат парсинга:', result);
         return result;
     },
 
     /**
-     * Полная обработка PDF-файла
+     * Полная обработка файла (без изменений)
      */
     async processFile(file, onProgress = null) {
         try {
@@ -125,7 +131,7 @@ const PDFProcessor = {
                 throw new Error(`Не удалось извлечь данные из имени файла: ${file.name}`);
             }
             
-            if (onProgress) onProgress(20, 'Извлечение текста из PDF...');
+            if (onProgress) onProgress(20, 'Извлечение текста...');
             
             const rawText = await this.extractText(file);
             
@@ -134,7 +140,7 @@ const PDFProcessor = {
             const cleanedText = this.cleanText(rawText);
             
             if (cleanedText.length < 100) {
-                throw new Error('Текст слишком короткий после очистки');
+                throw new Error('Текст слишком короткий');
             }
             
             if (onProgress) onProgress(100, 'Готово!');
@@ -149,6 +155,7 @@ const PDFProcessor = {
             };
             
         } catch (error) {
+            console.error('❌ Ошибка обработки:', error);
             return {
                 success: false,
                 error: error.message,
@@ -159,4 +166,4 @@ const PDFProcessor = {
 };
 
 window.PDFProcessor = PDFProcessor;
-console.log('✅ PDFProcessor v6.0 загружен (pdf-text-reader)');
+console.log('✅ PDFProcessor v6.0 загружен (использует unpdf)');
