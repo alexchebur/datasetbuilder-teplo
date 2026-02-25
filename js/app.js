@@ -874,6 +874,8 @@ function init() {
         DOM.previewSelect.addEventListener('change', handlePreviewChange);
     }
 
+    if (DOM.btnSaveChanges) DOM.btnSaveChanges.addEventListener('click', handleSaveChanges);
+
     // 5. Экспорт (JSONL)
     if (DOM.btnDownloadJsonl) {
         DOM.btnDownloadJsonl.addEventListener('click', handleDownloadJSONL);
