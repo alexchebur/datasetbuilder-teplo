@@ -1,19 +1,19 @@
 /**
-PDF_PROCESSOR.JS
-Обработка PDF-файлов в браузере с использованием pdf.js
-Версия: 4.0 (Геометрическая склейка слов на основе координат)
-*/
+ * PDF_PROCESSOR.JS
+ * Обработка PDF-файлов в браузере с использованием pdf-text-reader
+ * Версия: 5.0 (Использует продвинутую геометрическую склейку из библиотеки)
+ */
 
-// Проверка загрузки PDF.js
-if (typeof pdfjsLib === 'undefined') {
-    console.error('❌ PDF_PROCESSOR: pdfjsLib не загружен! Проверьте порядок скриптов в index.html');
-}
+// Импортируем библиотеку (предполагается, что вы используете сборщик модулей)
+// Если нет - см. инструкцию после кода
+import { readPdfText } from 'pdf-text-reader';
 
 window.PDFProcessor = null;
 
 const PDFProcessor = {
     /**
-     * Извлекает текст из PDF-файла с умной склейкой на основе координат
+     * Извлекает текст из PDF-файла с помощью pdf-text-reader
+     * Теперь это просто и надежно!
      */
     async extractText(file) {
         console.log('🔍 Начало извлечения текста из:', file.name);
@@ -22,110 +22,11 @@ const PDFProcessor = {
             const arrayBuffer = await file.arrayBuffer();
             console.log('📦 Размер файла:', arrayBuffer.byteLength, 'байт');
             
-            // Используем правильный формат для pdf.js
-            const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
-            const pdf = await loadingTask.promise;
+            // pdf-text-reader принимает данные в разных форматах
+            const text = await readPdfText({ data: arrayBuffer });
             
-            console.log('✅ PDF загружен, страниц:', pdf.numPages);
-            
-            let fullText = [];
-            
-            for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-                console.log(`📄 Обработка страницы ${pageNum}/${pdf.numPages}`);
-                const page = await pdf.getPage(pageNum);
-                const textContent = await page.getTextContent();
-                const items = textContent.items;
-                
-                if (items.length === 0) continue;
-
-                let pageLines = [];
-                let currentLineParts = [];
-                
-                let lastItem = null;
-                
-                // 1. Вычисляем средний размер шрифта для этой страницы
-                let totalHeight = 0;
-                let count = 0;
-                items.forEach(item => {
-                    if (item.height) {
-                        totalHeight += item.height;
-                        count++;
-                    }
-                });
-                const avgFontSize = count > 0 ? totalHeight / count : 12;
-                
-                // 2. Настраиваем пороги
-                // Если разрыв меньше 20% высоты шрифта -> это часть слова (склеиваем БЕЗ пробела)
-                const WORD_GAP_THRESHOLD = avgFontSize * 0.2; 
-                // Если разрыв по Y больше 50% высоты шрифта -> новая строка
-                const LINE_HEIGHT_THRESHOLD = avgFontSize * 0.5;
-
-                for (let i = 0; i < items.length; i++) {
-                    const item = items[i];
-                    const str = item.str;
-
-                    // Пропускаем пустые элементы
-                    if (!str || str.trim() === '') {
-                        lastItem = item;
-                        continue;
-                    }
-
-                    // Координаты: transform = [scaleX, skewY, skewX, scaleY, x, y]
-                    const x = item.transform[4];
-                    const y = item.transform[5];
-                    
-                    // Приблизительная ширина элемента
-                    const width = item.width || (str.length * avgFontSize * 0.6);
-                    const xEnd = x + width;
-
-                    if (lastItem) {
-                        const lastX = lastItem.transform[4];
-                        const lastY = lastItem.transform[5];
-                        const lastWidth = lastItem.width || (lastItem.str.length * avgFontSize * 0.6);
-                        const lastXEnd = lastX + lastWidth;
-
-                        const deltaY = Math.abs(y - lastY);
-                        const gap = x - lastXEnd;
-
-                        // А. Проверка на новую строку
-                        if (deltaY > LINE_HEIGHT_THRESHOLD || x < lastX) {
-                            // Сохраняем текущую строку
-                            if (currentLineParts.length > 0) {
-                                pageLines.push(currentLineParts.join(''));
-                            }
-                            currentLineParts = [str];
-                            lastItem = item;
-                            continue;
-                        }
-
-                        // Б. Проверка разрыва внутри строки
-                        if (gap > WORD_GAP_THRESHOLD) {
-                            // Большой разрыв -> добавляем пробел перед словом
-                            currentLineParts.push(' ' + str);
-                        } else {
-                            // Микро-разрыв или наложение -> склеиваем без пробела
-                            // Это исправляет "рассмотре л" -> "рассмотрел"
-                            currentLineParts.push(str);
-                        }
-                    } else {
-                        // Первый элемент строки
-                        currentLineParts.push(str);
-                    }
-
-                    lastItem = item;
-                }
-
-                // Добавляем последнюю строку страницы
-                if (currentLineParts.length > 0) {
-                    pageLines.push(currentLineParts.join(''));
-                }
-
-                fullText.push(`--- СТРАНИЦА ${pageNum} ---\n${pageLines.join('\n')}\n`);
-            }
-            
-            const result = fullText.join('\n\n');
-            console.log('✅ Всего извлечено символов:', result.length);
-            return result;
+            console.log('✅ Текст успешно извлечен, длина:', text.length);
+            return text;
             
         } catch (error) {
             console.error('❌ Ошибка при извлечении текста:', error);
@@ -134,32 +35,40 @@ const PDFProcessor = {
     },
 
     /**
-     * Мягкая очистка текста (без агрессивной склейки)
+     * Мягкая очистка текста
+     * Теперь это вспомогательная функция, а не основной механизм
      */
     cleanText(text) {
         if (!text) return '';
         
-        // Удаляем управляющие символы
+        // Удаляем управляющие символы (кроме переносов строк и табуляции)
         text = text.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g, '');
         
-        // Заменяем табуляцию на пробел
-        text = text.replace(/\t/g, ' ');
+        // Нормализуем переносы строк
+        text = text.replace(/\r\n/g, '\n');
+        text = text.replace(/\r/g, '\n');
         
-        // Убираем пробелы ПЕРЕД знаками препинания (частая ошибка PDF)
+        // Убираем пробелы ПЕРЕД знаками препинания (иногда остаются)
         text = text.replace(/\s+([.,;:!?])/g, '$1');
         
         // Восстанавливаем пробелы ПОСЛЕ знаков препинания, если они слиплись
-        text = text.replace(/([.,;:!?])([а-яА-ЯёЁ0-9])/g, '$1 $2');
+        text = text.replace(/([.,;:!?])([а-яА-ЯёЁa-zA-Z0-9])/g, '$1 $2');
         
-        // Нормализуем множественные переносы строк
+        // Убираем множественные пробелы
+        text = text.replace(/[ ]{2,}/g, ' ');
+        
+        // Нормализуем множественные переносы строк (не больше двух подряд)
         text = text.replace(/\n{3,}/g, '\n\n');
         
-        // Trim каждой строки
-        text = text.split('\n').map(line => line.trim()).join('\n').trim();
+        // Trim каждой строки (убираем лишние пробелы в начале/конце строк)
+        text = text.split('\n').map(line => line.trim()).join('\n');
         
-        // Замена лигатур
+        // Общий trim
+        text = text.trim();
+        
+        // Замена лигатур и спецсимволов
         const replacements = {
-            'ﬁ': 'фи', 'ﬂ': 'фл', 'ﬀ': 'фф', 'ﬃ': 'ффи', 'ﬄ': 'ффл',
+            'ﬁ': 'fi', 'ﬂ': 'fl', 'ﬀ': 'ff', 'ﬃ': 'ffi', 'ﬄ': 'ffl',
             '–': '-', '—': '-', 
             '«': '"', '»': '"', '„': '"', '‚': "'",
             '′': "'", '″': '"', '…': '...', '•': '-', 
@@ -175,6 +84,7 @@ const PDFProcessor = {
 
     /**
      * Извлекает информацию о деле из имени файла
+     * (без изменений, работает отлично)
      */
     extractCaseInfo(filename) {
         console.log('🔍 Парсинг имени файла:', filename);
@@ -210,6 +120,7 @@ const PDFProcessor = {
 
     /**
      * Полная обработка файла
+     * (минимальные изменения для совместимости)
      */
     async processFile(file, onProgress = null) {
         try {
@@ -243,6 +154,7 @@ const PDFProcessor = {
             };
             
         } catch (error) {
+            console.error('❌ Ошибка обработки:', error);
             return {
                 success: false,
                 error: error.message,
@@ -253,4 +165,4 @@ const PDFProcessor = {
 };
 
 window.PDFProcessor = PDFProcessor;
-console.log('✅ PDFProcessor v4.0 загружен (Геометрический анализ)');
+console.log('✅ PDFProcessor v5.0 загружен (использует pdf-text-reader)');
