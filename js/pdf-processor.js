@@ -1,20 +1,19 @@
 /**
 PDF_PROCESSOR.JS
-Обработка PDF-файлов в браузере с использованием pdf.js
-Версия: 5.1 (Исправлен getDocument + Геометрическая склейка слов)
+Обработка PDF-файлов с использованием pdf-text-reader
+Версия: 6.0 (pdf-text-reader + минимальная очистка)
 */
 
-// Проверка загрузки PDF.js
-if (typeof pdfjsLib === 'undefined') {
-    console.error('❌ PDF_PROCESSOR: pdfjsLib не загружен! Проверьте порядок скриптов в index.html');
+// Проверка загрузки библиотеки
+if (typeof PDFTextReader === 'undefined') {
+    console.error('❌ PDF_PROCESSOR: PDFTextReader не загружен! Проверьте index.html');
 }
 
-// Экспорт в глобальный scope
 window.PDFProcessor = null;
 
 const PDFProcessor = {
     /**
-     * Извлекает текст из PDF-файла с умной склейкой на основе координат
+     * Извлекает текст из PDF с помощью pdf-text-reader
      */
     async extractText(file) {
         console.log('🔍 Начало извлечения текста из:', file.name);
@@ -23,38 +22,12 @@ const PDFProcessor = {
             const arrayBuffer = await file.arrayBuffer();
             console.log('📦 Размер файла:', arrayBuffer.byteLength, 'байт');
             
-            // ✅ ГАРАНТИРОВАННО РАБОЧИЙ СИНТАКСИС
-            // Явно создаем объект параметра
-            const params = {
-                data: arrayBuffer,
-                useWorkerFetch: false // Отключаем fetch worker для локальных файлов
-            };
+            // ✅ Используем pdf-text-reader вместо raw pdf.js
+            const reader = new PDFTextReader();
+            const text = await reader.read(arrayBuffer);
             
-            const loadingTask = pdfjsLib.getDocument(params);
-            const pdf = await loadingTask.promise;
-            
-            console.log('✅ PDF загружен, страниц:', pdf.numPages);
-            
-            let fullText = [];
-            
-            for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-                console.log(`📄 Обработка страницы ${pageNum}/${pdf.numPages}`);
-                const page = await pdf.getPage(pageNum);
-                const textContent = await page.getTextContent();
-                
-                // ⚠️ ВРЕМЕННО: Возвращаем простую склейку, чтобы проверить работу getDocument
-                // Мы вернем умную склейку координат, как только эта ошибка исчезнет
-                const pageText = textContent.items
-                    .map(item => item.str)
-                    .join(' ');
-                
-                console.log(`   → Извлечено символов: ${pageText.length}`);
-                fullText.push(`--- СТРАНИЦА ${pageNum} ---\n${pageText}\n`);
-            }
-            
-            const result = fullText.join('\n\n');
-            console.log('✅ Всего извлечено символов:', result.length);
-            return result;
+            console.log('✅ Текст извлечён, символов:', text.length);
+            return text;
             
         } catch (error) {
             console.error('❌ Ошибка при извлечении текста:', error);
@@ -62,8 +35,9 @@ const PDFProcessor = {
             throw error;
         }
     },
+
     /**
-     * Минимальная очистка текста (сохраняет исходные пробелы)
+     * Минимальная очистка текста (сохраняет все пробелы)
      */
     cleanText(text) {
         if (!text) return '';
@@ -184,6 +158,5 @@ const PDFProcessor = {
     }
 };
 
-// Экспорт в глобальный scope
 window.PDFProcessor = PDFProcessor;
-console.log('✅ PDFProcessor v5.1 загружен');
+console.log('✅ PDFProcessor v6.0 загружен (pdf-text-reader)');
