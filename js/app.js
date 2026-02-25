@@ -690,7 +690,11 @@ function init() {
     if (DOM.btnDownloadJsonl) DOM.btnDownloadJsonl.addEventListener('click', handleDownloadJSONL);
     if (DOM.btnDownloadInstruction) DOM.btnDownloadInstruction.addEventListener('click', handleDownloadInstruction);
     if (DOM.btnDownloadZip) DOM.btnDownloadZip.addEventListener('click', handleDownloadZip);
-    
+    // ✅ ДОБАВИТЬ ЭТОТ БЛОК: Обработчик кнопки очистки
+    const btnClearData = document.getElementById('btn-clear-data');
+    if (btnClearData) {
+        btnClearData.addEventListener('click', clearDataset);
+    }
     updateUI();
     
     if (DOM.pdfUpload && DOM.pdfUpload.files && DOM.pdfUpload.files.length > 0) {
