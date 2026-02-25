@@ -27,7 +27,7 @@ const PDFProcessor = {
             const pdf = await getDocumentProxy(uint8Array);
             
             // Извлекаем текст с объединением всех страниц в одну строку
-            const { text } = await extractText(pdf, { mergePages: true });
+            const { text } = await extractText(unpdf, { mergePages: true });
             
             console.log('✅ Текст успешно извлечен, длина:', text.length);
             return text;
