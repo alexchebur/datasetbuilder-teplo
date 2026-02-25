@@ -1,7 +1,7 @@
 /**
 PDF_PROCESSOR.JS
 Обработка PDF-файлов в браузере с использованием pdf.js
-Версия: 3.0 (Геометрическая склейка слов + сохранение пробелов)
+Версия: 3.0 (исправлена передача данных в getDocument)
 */
 
 // Проверка загрузки PDF.js
@@ -14,7 +14,7 @@ window.PDFProcessor = null;
 
 const PDFProcessor = {
     /**
-     * Извлекает текст из PDF-файла с умной склейкой на основе координат
+     * Извлекает текст из PDF-файла
      */
     async extractText(file) {
         console.log('🔍 Начало извлечения текста из:', file.name);
@@ -23,6 +23,7 @@ const PDFProcessor = {
             const arrayBuffer = await file.arrayBuffer();
             console.log('📦 Размер файла:', arrayBuffer.byteLength, 'байт');
             
+            // ✅ Правильный формат для pdf.js v3.x
             const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
             const pdf = await loadingTask.promise;
             
@@ -34,91 +35,13 @@ const PDFProcessor = {
                 console.log(`📄 Обработка страницы ${pageNum}/${pdf.numPages}`);
                 const page = await pdf.getPage(pageNum);
                 const textContent = await page.getTextContent();
-                const items = textContent.items;
                 
-                if (items.length === 0) continue;
-
-                // 1. Считаем средний размер шрифта для этой страницы
-                let totalHeight = 0;
-                let count = 0;
-                items.forEach(item => {
-                    if (item.height) {
-                        totalHeight += item.height;
-                        count++;
-                    }
-                });
-                const avgFontSize = count > 0 ? totalHeight / count : 12;
+                const pageText = textContent.items
+                    .map(item => item.str)
+                    .join(' ');
                 
-                // 2. Пороги для определения разрывов
-                // Если разрыв меньше 20% высоты шрифта -> это часть слова (склеиваем)
-                const WORD_GAP_THRESHOLD = avgFontSize * 0.20;
-                // Если разрыв по Y больше 50% высоты шрифта -> новая строка
-                const LINE_HEIGHT_THRESHOLD = avgFontSize * 0.5;
-
-                let pageLines = [];
-                let currentLineParts = [];
-                let lastItem = null;
-
-                for (let i = 0; i < items.length; i++) {
-                    const item = items[i];
-                    const str = item.str;
-
-                    // Пропускаем пустые элементы
-                    if (!str || str.trim() === '') {
-                        lastItem = item;
-                        continue;
-                    }
-
-                    // Координаты: transform = [scaleX, skewY, skewX, scaleY, x, y]
-                    const x = item.transform[4];
-                    const y = item.transform[5];
-                    
-                    // Приблизительная ширина элемента
-                    const width = item.width || (str.length * avgFontSize * 0.6);
-                    const xEnd = x + width;
-
-                    if (lastItem) {
-                        const lastX = lastItem.transform[4];
-                        const lastY = lastItem.transform[5];
-                        const lastWidth = lastItem.width || (lastItem.str.length * avgFontSize * 0.6);
-                        const lastXEnd = lastX + lastWidth;
-
-                        const deltaY = Math.abs(y - lastY);
-                        const gap = x - lastXEnd;
-
-                        // А. Проверка на новую строку
-                        if (deltaY > LINE_HEIGHT_THRESHOLD || x < lastX) {
-                            // Сохраняем текущую строку
-                            if (currentLineParts.length > 0) {
-                                pageLines.push(currentLineParts.join(''));
-                            }
-                            currentLineParts = [str];
-                            lastItem = item;
-                            continue;
-                        }
-
-                        // Б. Проверка разрыва внутри строки
-                        if (gap > WORD_GAP_THRESHOLD) {
-                            // Нормальный пробел между словами
-                            currentLineParts.push(' ' + str);
-                        } else {
-                            // Микро-разрыв (склеиваем слово) - исправляет "рассмотре л" → "рассмотрел"
-                            currentLineParts.push(str);
-                        }
-                    } else {
-                        // Первый элемент строки
-                        currentLineParts.push(str);
-                    }
-
-                    lastItem = item;
-                }
-
-                // Добавляем последнюю строку страницы
-                if (currentLineParts.length > 0) {
-                    pageLines.push(currentLineParts.join(''));
-                }
-
-                fullText.push(`--- СТРАНИЦА ${pageNum} ---\n${pageLines.join('\n')}\n`);
+                console.log(`   → Извлечено символов: ${pageText.length}`);
+                fullText.push(`--- СТРАНИЦА ${pageNum} ---\n${pageText}\n`);
             }
             
             const result = fullText.join('\n\n');
@@ -133,35 +56,21 @@ const PDFProcessor = {
     },
 
     /**
-     * Минимальная очистка текста (сохраняет исходные пробелы)
+     * Очищает текст от артефактов PDF
      */
     cleanText(text) {
         if (!text) return '';
         
-        // 1. Удаляем ТОЛЬКО управляющие символы (не пробелы!)
         text = text.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g, '');
-        
-        // 2. Заменяем табуляцию на пробел
-        text = text.replace(/\t/g, ' ');
-        
-        // 3. Убираем пробелы ПЕРЕД знаками препинания (частая ошибка PDF)
-        text = text.replace(/\s+([.,;:!?])/g, '$1');
-        
-        // 4. Добавляем пробел ПОСЛЕ знаков препинания, если нет
-        text = text.replace(/([.,;:!?])([а-яА-ЯёЁ0-9])/g, '$1 $2');
-        
-        // 5. Нормализуем множественные переносы строк (3+ → 2)
-        text = text.replace(/\n{3,}/g, '\n\n');
-        
-        // 6. Trim каждой строки (пробелы по краям)
+        text = text.replace(/[ \t]+/g, ' ');
+        text = text.replace(/\n\s*\n/g, '\n\n');
         text = text.split('\n').map(line => line.trim()).join('\n').trim();
         
-        // 7. Замена лигатур (без агрессивных замен)
         const replacements = {
             'ﬁ': 'фи', 'ﬂ': 'фл', 'ﬀ': 'фф', 'ﬃ': 'ффи', 'ﬄ': 'ффл',
-            '–': '-', '—': '-',
-            '«': '"', '»': '"', '„': '"', '‚': "'",
-            '…': '...', '•': '-',
+            '–': '-', '—': '-', '«': '"', '»': '"', '„': '"', '‚': "'",
+            '′': "'", '″': '"', '…': '...', '•': '-', '©': '(c)',
+            '®': '(R)', '™': '(TM)',
         };
         
         for (const [oldChar, newChar] of Object.entries(replacements)) {
@@ -254,6 +163,6 @@ const PDFProcessor = {
     }
 };
 
-// Экспорт в глобальный scope
+// Экспорт в глобальный scope — ПОСЛЕ определения объекта
 window.PDFProcessor = PDFProcessor;
-console.log('✅ PDFProcessor v3.0 загружен (pdf.js с геометрической склейкой)');
+console.log('✅ PDFProcessor загружен и экспортирован');
