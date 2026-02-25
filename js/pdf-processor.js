@@ -1,19 +1,20 @@
 /**
 PDF_PROCESSOR.JS
-Обработка PDF-файлов с использованием pdf-text-reader
-Версия: 6.0 (pdf-text-reader + минимальная очистка)
+Обработка PDF-файлов в браузере с использованием pdf.js
+Версия: 3.0 (Геометрическая склейка слов + сохранение пробелов)
 */
 
-// Проверка загрузки библиотеки
-if (typeof PDFTextReader === 'undefined') {
-    console.error('❌ PDF_PROCESSOR: PDFTextReader не загружен! Проверьте index.html');
+// Проверка загрузки PDF.js
+if (typeof pdfjsLib === 'undefined') {
+    console.error('❌ PDF_PROCESSOR: pdfjsLib не загружен! Проверьте порядок скриптов в index.html');
 }
 
+// Экспорт в глобальный scope
 window.PDFProcessor = null;
 
 const PDFProcessor = {
     /**
-     * Извлекает текст из PDF с помощью pdf-text-reader
+     * Извлекает текст из PDF-файла с умной склейкой на основе координат
      */
     async extractText(file) {
         console.log('🔍 Начало извлечения текста из:', file.name);
@@ -22,12 +23,107 @@ const PDFProcessor = {
             const arrayBuffer = await file.arrayBuffer();
             console.log('📦 Размер файла:', arrayBuffer.byteLength, 'байт');
             
-            // ✅ Используем pdf-text-reader вместо raw pdf.js
-            const reader = new PDFTextReader();
-            const text = await reader.read(arrayBuffer);
+            const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+            const pdf = await loadingTask.promise;
             
-            console.log('✅ Текст извлечён, символов:', text.length);
-            return text;
+            console.log('✅ PDF загружен, страниц:', pdf.numPages);
+            
+            let fullText = [];
+            
+            for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+                console.log(`📄 Обработка страницы ${pageNum}/${pdf.numPages}`);
+                const page = await pdf.getPage(pageNum);
+                const textContent = await page.getTextContent();
+                const items = textContent.items;
+                
+                if (items.length === 0) continue;
+
+                // 1. Считаем средний размер шрифта для этой страницы
+                let totalHeight = 0;
+                let count = 0;
+                items.forEach(item => {
+                    if (item.height) {
+                        totalHeight += item.height;
+                        count++;
+                    }
+                });
+                const avgFontSize = count > 0 ? totalHeight / count : 12;
+                
+                // 2. Пороги для определения разрывов
+                // Если разрыв меньше 20% высоты шрифта -> это часть слова (склеиваем)
+                const WORD_GAP_THRESHOLD = avgFontSize * 0.20;
+                // Если разрыв по Y больше 50% высоты шрифта -> новая строка
+                const LINE_HEIGHT_THRESHOLD = avgFontSize * 0.5;
+
+                let pageLines = [];
+                let currentLineParts = [];
+                let lastItem = null;
+
+                for (let i = 0; i < items.length; i++) {
+                    const item = items[i];
+                    const str = item.str;
+
+                    // Пропускаем пустые элементы
+                    if (!str || str.trim() === '') {
+                        lastItem = item;
+                        continue;
+                    }
+
+                    // Координаты: transform = [scaleX, skewY, skewX, scaleY, x, y]
+                    const x = item.transform[4];
+                    const y = item.transform[5];
+                    
+                    // Приблизительная ширина элемента
+                    const width = item.width || (str.length * avgFontSize * 0.6);
+                    const xEnd = x + width;
+
+                    if (lastItem) {
+                        const lastX = lastItem.transform[4];
+                        const lastY = lastItem.transform[5];
+                        const lastWidth = lastItem.width || (lastItem.str.length * avgFontSize * 0.6);
+                        const lastXEnd = lastX + lastWidth;
+
+                        const deltaY = Math.abs(y - lastY);
+                        const gap = x - lastXEnd;
+
+                        // А. Проверка на новую строку
+                        if (deltaY > LINE_HEIGHT_THRESHOLD || x < lastX) {
+                            // Сохраняем текущую строку
+                            if (currentLineParts.length > 0) {
+                                pageLines.push(currentLineParts.join(''));
+                            }
+                            currentLineParts = [str];
+                            lastItem = item;
+                            continue;
+                        }
+
+                        // Б. Проверка разрыва внутри строки
+                        if (gap > WORD_GAP_THRESHOLD) {
+                            // Нормальный пробел между словами
+                            currentLineParts.push(' ' + str);
+                        } else {
+                            // Микро-разрыв (склеиваем слово) - исправляет "рассмотре л" → "рассмотрел"
+                            currentLineParts.push(str);
+                        }
+                    } else {
+                        // Первый элемент строки
+                        currentLineParts.push(str);
+                    }
+
+                    lastItem = item;
+                }
+
+                // Добавляем последнюю строку страницы
+                if (currentLineParts.length > 0) {
+                    pageLines.push(currentLineParts.join(''));
+                }
+
+                fullText.push(`--- СТРАНИЦА ${pageNum} ---\n${pageLines.join('\n')}\n`);
+            }
+            
+            const result = fullText.join('\n\n');
+            console.log('✅ Всего извлечено символов:', result.length);
+            return result;
             
         } catch (error) {
             console.error('❌ Ошибка при извлечении текста:', error);
@@ -37,7 +133,7 @@ const PDFProcessor = {
     },
 
     /**
-     * Минимальная очистка текста (сохраняет все пробелы)
+     * Минимальная очистка текста (сохраняет исходные пробелы)
      */
     cleanText(text) {
         if (!text) return '';
@@ -158,5 +254,6 @@ const PDFProcessor = {
     }
 };
 
+// Экспорт в глобальный scope
 window.PDFProcessor = PDFProcessor;
-console.log('✅ PDFProcessor v6.0 загружен (pdf-text-reader)');
+console.log('✅ PDFProcessor v3.0 загружен (pdf.js с геометрической склейкой)');
