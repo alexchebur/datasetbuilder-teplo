@@ -520,6 +520,36 @@ async function handleDownloadZip() {
     }
 }
 
+window.clearDataset = function() {
+    if (AppState.datasetEntries.length === 0) {
+        alert('Датасет уже пуст!');
+        return;
+    }
+
+    if (confirm('⚠️ Вы уверены, что хотите удалить ВСЕ записи?\n\nЭто действие нельзя отменить. Данные будут удалены из памяти и localStorage.')) {
+        AppState.datasetEntries = [];
+        AppState.processedFiles.clear();
+        AppState.lastUpdated = null;
+        AppState.currentPreviewIndex = null;
+        
+        // Сброс полей ввода файлов
+        if (DOM.pdfUpload) DOM.pdfUpload.value = '';
+        if (DOM.jsonlUpload) DOM.jsonlUpload.value = '';
+        
+        saveToLocalStorage();
+        updateUI();
+        
+        // Сброс статусов
+        if (DOM.processStatus) DOM.processStatus.innerHTML = '';
+        if (DOM.loadStatus) DOM.loadStatus.innerHTML = '';
+        if (DOM.saveStatus) DOM.saveStatus.innerHTML = '';
+        
+        console.log('🗑 Датасет полностью очищен');
+        alert('✅ Датасет очищен!');
+    }
+};
+
+
 // ============================================================================
 // ОБНОВЛЕНИЕ ИНТЕРФЕЙСА
 // ============================================================================
