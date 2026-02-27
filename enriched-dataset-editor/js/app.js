@@ -277,9 +277,9 @@ function handlePreviewChange() {
             <div class="preview-section">
                 <h6 class="section-header">📋 Базовая информация</h6>
                 <div class="field-row">
-                    <span class="field-label">case_id:</span>
-                    <span class="field-value code">${escapeHtml(entry.case_id || '—')}</span>
-                    <button class="btn-copy" onclick="copyToClipboard('${escapeJs(entry.case_id || '')}')" title="Копировать">📋</button>
+                    <span class="field-label">case_number:</span>
+                    <span class="field-value code">${escapeHtml(entry.case_number || '—')}</span>
+                    <button class="btn-copy" onclick="copyToClipboard('${escapeJs(entry.case_number || '')}')" title="Копировать">📋</button>
                 </div>
                 <div class="field-row">
                     <span class="field-label">decision_verdict:</span>
@@ -650,7 +650,7 @@ function showFullSummary() {
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">📄 Полное содержание: ${escapeHtml(entry.case_id)}</h5>
+                    <h5 class="modal-title">📄 Полное содержание: ${escapeHtml(entry.case_number)}</h5>
                     <button type="button" class="btn-close" onclick="this.closest('.modal').remove()"></button>
                 </div>
                 <div class="modal-body">
@@ -706,7 +706,7 @@ function updatePreviewSelectWithDetails() {
         const verdictIcon = entry.decision_verdict?.includes('удовлетвор') ? '✅' : 
                            entry.decision_verdict?.includes('отказ') ? '❌' : '⚖️';
         
-        option.textContent = `${entry.case_id || '—'} | ${verdictIcon} ${entry.decision_verdict || '—'} | ${plaintiffShort}`;
+        option.textContent = `${entry.case_number || '—'} | ${verdictIcon} ${entry.decision_verdict || '—'} | ${plaintiffShort}`;
         DOM.previewSelect.appendChild(option);
     });
     
@@ -769,7 +769,7 @@ function updatePreviewSelect() {
     AppState.datasetEntries.forEach((entry, index) => {
         const option = document.createElement('option');
         option.value = index;
-        option.textContent = `${entry.case_id || '—'} | ${entry.decision_verdict || '—'}`;
+        option.textContent = `${entry.case_number || '—'} | ${entry.decision_verdict || '—'}`;
         DOM.previewSelect.appendChild(option);
     });
 }
@@ -786,7 +786,7 @@ function updateRecordsTable() {
         
         row.innerHTML = `
             <td>${index + 1}</td>
-            <td><code>${truncateText(entry.case_id, 50)}</code></td>
+            <td><code>${truncateText(entry.case_number, 50)}</code></td>
             <td class="text-truncate-2" style="max-width: 300px;">${truncateText(entry.dispute_summary, 200)}</td>
             <td class="text-truncate-2">${truncateText(entry.plaintiff?.name, 100)}</td>
             <td class="text-truncate-2">${truncateText(entry.defendant?.name, 100)}</td>
