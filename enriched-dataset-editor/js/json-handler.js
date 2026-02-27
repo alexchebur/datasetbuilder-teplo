@@ -8,6 +8,7 @@ const JSONLHandler = {
     /**
      * Создаёт запись enriched датасета
      */
+    // 🔧 ИСПРАВЛЕНО: createEnrichedEntry
     createEnrichedEntry(data) {
         return {
             case_id: data.case_id || '',
@@ -20,9 +21,9 @@ const JSONLHandler = {
             decision_verdict: data.decision_verdict || '',
             initial_claims_sum: data.initial_claims_sum || { initial_claims: 0, awarded: 0 },
             mentioned_rules: data.mentioned_rules || [],
-            personal_data: data.personal_data || [],
+            personal_data: data.personal_data || [],  // ✅ БЫЛО: personal_ data.personal_data
             q_a: data.q_a || [],
-            metadata: {
+            metadata: {  // ✅ БЫЛО: meta {
                 source: 'enriched_legal_dataset',
                 language: 'ru',
                 created_at: data.metadata?.created_at || new Date().toISOString(),
