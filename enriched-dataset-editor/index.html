@@ -192,9 +192,38 @@
         </div>
     </div>
 
+    <!-- ✅ Исправленные пути с проверкой загрузки -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
-    <script src="js/jsonl-handler.js"></script>
-    <script src="js/app.js"></script>
+
+    <!-- ✅ Относительные пути с fallback для GitHub Pages -->
+    <script>
+        // Автоматическое определение базового пути
+        const basePath = window.location.pathname.includes('/enriched-dataset-editor/') 
+            ? '/enriched-dataset-editor/' 
+            : './';
+    
+        // Динамическая загрузка скриптов с проверкой
+        function loadScript(src, callback) {
+            const script = document.createElement('script');
+            script.src = basePath + src;
+            script.onload = callback;
+            script.onerror = () => console.error(`❌ Не загружен: ${src}`);
+            document.body.appendChild(script);
+        }
+    
+        // Загружаем jsonl-handler.js ПЕРВЫМ
+        loadScript('js/jsonl-handler.js', () => {
+            if (typeof JSONLHandler === 'undefined') {
+                console.error('❌ JSONLHandler не определён после загрузки!');
+                document.body.innerHTML = '<h1 style="color:red;padding:2rem">Ошибка: jsonl-handler.js не загружен</h1>';
+                return;
+            }
+            // Затем загружаем app.js
+            loadScript('js/app.js', () => {
+                console.log('✅ Все скрипты загружены');
+            });
+        });
+    </script>
 </body>
 </html>
