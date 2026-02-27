@@ -15,7 +15,27 @@ const AppState = {
     keysToAdd: [],
     isModified: false
 };
-
+// 🔧 ЗАЩИТА: Проверка загрузки JSONLHandler
+if (typeof JSONLHandler === 'undefined') {
+    console.error('❌ Критическая ошибка: jsonl-handler.js не загружен!');
+    document.addEventListener('DOMContentLoaded', () => {
+        document.body.innerHTML = `
+            <div style="padding:2rem;text-align:center;color:#dc3545">
+                <h2>⚠️ Ошибка загрузки</h2>
+                <p>Файл <code>js/jsonl-handler.js</code> не найден.</p>
+                <p>Проверьте:</p>
+                <ul style="text-align:left;max-width:500px;margin:1rem auto">
+                    <li>Файл загружен на GitHub</li>
+                    <li>Пути в index.html корректны</li>
+                    <li>GitHub Pages обновился (может занять 1-2 мин)</li>
+                </ul>
+                <a href="../index.html" class="btn btn-primary">← Вернуться в сборщик</a>
+            </div>
+        `;
+    });
+    // Прерываем дальнейшее выполнение
+    throw new Error('JSONLHandler not loaded');
+}
 // ============================================================================
 // DOM ЭЛЕМЕНТЫ
 // ============================================================================
