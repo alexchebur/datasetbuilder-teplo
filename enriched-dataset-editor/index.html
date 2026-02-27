@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>✏️ Редактор обогащённого датасета</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-dark">
+        <div class="container-fluid">
+            <span class="navbar-brand mb-0 h1">✏️ Редактор обогащённого датасета</span>
+            <div class="d-flex">
+                <span id="dataset-info" class="navbar-text text-light me-3">Записей: 0</span>
+                <a href="../index.html" class="btn btn-outline-light btn-sm">🏠 Вернуться в сборщик</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+        <!-- Статистика -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card stats-card">
+                    <div class="card-body">
+                        <h6 class="card-title text-muted">Записей в датасете</h6>
+                        <h3 id="stat-records">0</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stats-card">
+                    <div class="card-body">
+                        <h6 class="card-title text-muted">Уникальных ключей</h6>
+                        <h3 id="stat-keys">0</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stats-card">
+                    <div class="card-body">
+                        <h6 class="card-title text-muted">Общий размер текста</h6>
+                        <h3 id="stat-chars">0</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stats-card">
+                    <div class="card-body">
+                        <h6 class="card-title text-muted">Файл</h6>
+                        <h5 id="stat-filename" class="text-truncate">—</h5>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Загрузка датасета -->
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">📥 Загрузка датасета</h5>
+            </div>
+            <div class="card-body">
+                <div class="row align-items-end">
+                    <div class="col-md-8">
+                        <label class="form-label">Выберите JSONL файл с обогащёнными данными</label>
+                        <input type="file" id="jsonl-upload" class="form-control" accept=".jsonl,.json">
+                    </div>
+                    <div class="col-md-4">
+                        <button id="btn-load" class="btn btn-primary w-100">📂 Загрузить датасет</button>
+                    </div>
+                </div>
+                <div id="load-status" class="mt-2"></div>
+            </div>
+        </div>
+
+        <!-- Управление ключами -->
+        <div class="card mb-4" id="key-management-section" style="display: none;">
+            <div class="card-header bg-warning">
+                <h5 class="mb-0">🔑 Управление ключами датасета</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Удаление ключей</h6>
+                        <p class="text-muted small">Выберите ключи для удаления из ВСЕХ записей</p>
+                        <div id="keys-to-delete" class="d-flex flex-wrap gap-2"></div>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Добавление новых ключей</h6>
+                        <p class="text-muted small">Добавить новый строковый ключ с пустым значением</p>
+                        <div class="input-group mb-2">
+                            <input type="text" id="new-key-name" class="form-control" placeholder="Название ключа">
+                            <select id="new-key-location" class="form-select" style="max-width: 200px;">
+                                <option value="root">Корневой уровень</option>
+                                <option value="plaintiff">plaintiff</option>
+                                <option value="defendant">defendant</option>
+                                <option value="initial_claims_sum">initial_claims_sum</option>
+                                <option value="metadata">metadata</option>
+                            </select>
+                            <button id="btn-add-key" class="btn btn-success">➕ Добавить</button>
+                        </div>
+                        <div id="added-keys" class="d-flex flex-wrap gap-2"></div>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <button id="btn-apply-changes" class="btn btn-warning">💾 Применить изменения ко всем записям</button>
+                    <span id="apply-status" class="ms-3"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Предпросмотр записи -->
+        <div class="card mb-4" id="preview-section" style="display: none;">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0">👁 Предпросмотр записи</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <label class="form-label">Выберите запись</label>
+                        <select id="preview-select" class="form-select"></select>
+                    </div>
+                    <div class="col-md-8 text-end">
+                        <button id="btn-save-record" class="btn btn-success">💾 Сохранить изменения записи</button>
+                        <span id="save-status" class="ms-2"></span>
+                    </div>
+                </div>
+                
+                <div class="row mt-3">
+                    <div class="col-md-6">
+                        <h6>📋 Метаданные</h6>
+                        <div id="preview-metadata" class="preview-box"></div>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>📄 Основные поля (до 500 символов)</h6>
+                        <div id="preview-content" class="preview-box"></div>
+                    </div>
+                </div>
+
+                <div class="mt-3">
+                    <h6>🔍 Полная структура JSON</h6>
+                    <div id="preview-json" class="preview-box" style="max-height: 600px; font-size: 0.75rem;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Таблица записей -->
+        <div class="card mb-4" id="table-section" style="display: none;">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0">📊 Все записи в датасете</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover" id="records-table">
+                        <thead>
+                            <tr>
+                                <th>№</th>
+                                <th>case_id</th>
+                                <th>dispute_summary</th>
+                                <th>plaintiff</th>
+                                <th>defendant</th>
+                                <th>decision_verdict</th>
+                                <th>Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody id="records-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Экспорт -->
+        <div class="card mb-4" id="export-section" style="display: none;">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0">💾 Экспорт датасета</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <button id="btn-download-jsonl" class="btn btn-outline-primary me-2">📥 Скачать JSONL</button>
+                        <button id="btn-download-json" class="btn btn-outline-primary">📥 Скачать JSON</button>
+                    </div>
+                    <div class="col-md-6 text-end">
+                        <button id="btn-clear-dataset" class="btn btn-outline-danger">🗑 Очистить датасет</button>
+                    </div>
+                </div>
+                <p class="text-muted mt-2 small">
+                    ℹ️ Файлы скачиваются локально с приставкой "_edited" к имени файла. Данные не отправляются на сервер.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <script src="js/jsonl-handler.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
